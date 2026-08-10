@@ -3,6 +3,7 @@ package main
 
 import "core:unicode"
 import "core:fmt"
+import "core:strings"
 
 Lexem_Kind :: enum {
     NONE, ERROR, EOF,
@@ -104,54 +105,51 @@ is_whitespace :: proc(c: u8) -> bool {
     return false
 }
 
+is_ident_start :: proc(c: u8) -> bool {
+    switch c {
+    case 'a'..='z', 'A'..='Z', '_':
+        return true
+    case:
+        return false
+    }
+}
 
+is_ident_char :: proc(c: u8) -> bool {
+    switch c {
+    case 'a'..='z', 'A'..='Z', '0'..='9', '_':
+        return true
+    case:
+        return false
+    }
+}
+
+is_number :: proc(c: u8) -> bool {
+    return c >= '0' && c <= '9'
+}
+
+// Could be refactored. For now it's ok.
 get_next_token :: proc(using scanner: ^Scanner) -> Token {
-    is_ident_start :: proc(c: u8) -> bool {
-        switch c {
-        case 'a'..='z', 'A'..='Z', '_':
-            return true
-        case:
-            return false
-        }
-    }
-
-    is_ident_char :: proc(c: u8) -> bool {
-        switch c {
-        case 'a'..='z', 'A'..='Z', '0'..='9', '_':
-            return true
-        case:
-            return false
-        }
-    }
-
-    is_number :: proc(c: u8) -> bool {
-        return c >= '0' && c <= '9'
-    }
-
     len := len(input)
 
     for {
+        // res := strings.index_any(input[pos:], "\t\n\v\f\r")
         for pos < len && is_whitespace(input[pos]) {
             pos += 1
         }
         if pos >= len do return Token {kind = .EOF}
 
-        if pos + 1 < len && input[pos:pos+2] == "//" {
-            for pos < len && input[pos] != '\n' && input[pos] != '\r' {
-                pos += 1
-            }
+        if strings.has_prefix(input[pos:], "//") {
+            idx := strings.index_any(input[pos:], "\n\r")
+            if idx < 0 do return Token {kind = .EOF}
+            pos += idx
             continue
         }
 
-        if pos + 1 < len && input[pos:pos+2] == "/*" {
+        if strings.has_prefix(input[pos:], "/*") {
             pos += 2
-            for pos + 1 < len && input[pos:pos+2] != "*/" {
-                pos += 1
-            }
-            if pos + 1 >= len {
-                panic("Unterminated block comment.")
-            }
-            pos += 2
+            idx := strings.index(input[pos:], "*/")
+            if idx < 0 do panic("Unterminated block comment.")
+            pos += idx + 2
             continue
         }
         break
@@ -183,7 +181,7 @@ get_next_token :: proc(using scanner: ^Scanner) -> Token {
         for pos < len && input[pos] != '"' {
             pos += 1
         }
-        if pos >= len do panic("Error in string literal.")
+        if pos >= len do panic("Unterminated string literal.")
         pos += 1
         return Token {kind = .STRING_LIT, value = input[start:pos - 1]}
     }
