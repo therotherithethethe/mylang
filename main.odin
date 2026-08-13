@@ -2,90 +2,87 @@
 package main
 
 main :: proc() {
-    // src, err := os.read_entire_file_from_path("./tests/main.mylang", context.allocator)
-    // assert(err == nil)
-    // src_string := string(src)
-    // fmt.println(src_string)
-    //
-    // scanner := Scanner {input = src_string}
-    // for {
-    //     tok := get_next_token(&scanner)
-    //     if tok.value == "" do fmt.printfln("Token{{kind = \"%v\"}", tok.kind)
-    //     else do fmt.println(tok)
-    //
-    //     if tok.kind == .EOF do break
-    // }
+    src, err := os.read_entire_file_from_path("./tests/main.mylang", context.allocator)
+    assert(err == nil)
+    src_string := string(src)
+    fmt.println(src_string)
 
-    scanner := Scanner {input = "1 + 2"}
-    parser := Parser {scanner = scanner}
-    token := get_next_token(&parser.scanner)
-    parser.last_token = token
-    node := make_tree(&parser)
-    lhs := node.(Binary).lhs_number
-    rhs := node.(Binary).lhs_number
-    fmt.println(lhs.(string))
-}
+    scanner := Scanner {input = src_string}
+    for {
+        tok := next_token(&scanner)
+        if tok.value == "" do fmt.printfln("Token{{kind = \"%v\"}", tok.kind)
+        else do fmt.println(tok)
 
-print_tree :: proc(node: Node) {
-    switch v in node {
-    case string: fmt.print(v)
-    case Unary: 
-        op := v.op
-        fmt.print("(")
-        print_tree(v.number^)
-        fmt.print(")")
-    case Binary:
-        fmt.print("(")
-        print_tree(v.lhs_number^)
-        // fmt.print("+")
-        // print_tree(v.rhs_number^)
-        // fmt.print(")")
-    case EOF:
+        if tok.kind == .EOF do break
     }
+
+    // scanner := Scanner {input = "-1 + 2 * 3 + 4"}
+    // parser := init_parser(scanner)
+    // node := tree_from_expr(&parser, context.allocator)
+    // // fmt.println(node.(Binary))
+    // str := tree_to_string(node)
+    // fmt.println(str)
 }
 
-Operation :: enum {
-    PLUS, MINUS, MULTIPLY, DIVIDE
+init_parser :: proc(scanner: Scanner) -> Parser {
+    parser := Parser {scanner = scanner}
+    token := next_token(&parser.scanner)
+    parser.last_token = token
+    return parser
+}
+
+tree_to_string :: proc(node: Node) -> string {
+    using strings, fmt
+    builder := builder_make()
+    impl :: proc(node: Node, builder: ^strings.Builder) -> string {
+        switch v in node {
+        case string:
+            sbprint(builder, v)
+        case Unary:
+            sbprintf(builder, "(%s ", op_to_str(v.op))
+            impl(v.child^, builder)
+            sbprint(builder, ")")
+        case Binary:
+            sbprintf(builder, "(%s ", op_to_str(v.op))
+            impl(v.left_child^, builder)
+            sbprintf(builder, " ")
+            impl(v.right_child^, builder)
+            sbprint(builder, ")")
+        }
+        return string(builder.buf[:])
+    }
+    return impl(node, &builder)
 }
 
 Unary :: struct {
-    op: Operation,
-    number: ^Node,
+    op: Lexem_Kind ,
+    child: ^Node,
 }
 
 Binary :: struct {
-    lhs_number: ^Node,
-    op: Operation,
-    rhs_number: ^Node,
+    left_child: ^Node,
+    op: Lexem_Kind,
+    right_child: ^Node,
 }
 
 Node :: union {
     string,
     Unary,
     Binary,
-    EOF,
 }
-
-EOF :: struct {}
 
 Parser :: struct {
     scanner: Scanner,
     last_token: Token,
 }
 
-peek_token :: proc(using parser: ^Parser) -> Token {
-    assert(last_token != Token{})
-    return last_token
-}
-
 consume_token :: proc(using parser: ^Parser) -> Token {
     token_to_return := last_token
-    last_token = get_next_token(&scanner)
+    last_token = next_token(&scanner)
     #partial switch token_to_return.kind {
-    case .PLUS, .MINUS, .MULTIPLY, .DIVIDE, .NUMERIC:
+    case .LPAREN..=.RIGHT_SHIFT_EQUAL, .NUMERIC:
     case:
-        fmt.printfln("Operation %s is not supported.", last_token.kind)
-        panic("");
+        fmt.panicf("Expected operator or .NUMERIC, got %v\n", token_to_return.kind)
     }
     return token_to_return
 }
@@ -94,64 +91,61 @@ infix_binding_power :: proc(op: Lexem_Kind) -> (l_bp: i8, r_bp: i8) {
     #partial switch op {
         case .PLUS, .MINUS: return 1, 2
         case .MULTIPLY, .DIVIDE: return 3, 4
-        case: panicf("Unexpexted op %v\n", op)
+        case: unreachable()
     }
 }
 
-panicf :: proc(format: string, args: ..any, allocator := context.allocator, newline := false) -> ! {
-    panic(fmt.aprintf(format, args, allocator, newline))
-}
-
-lexem_to_op :: proc(lexem: Lexem_Kind) -> Operation {
-    #partial switch lexem {
-    case .PLUS: return .PLUS
-    case .MINUS: return .MINUS
-    case .MULTIPLY: return .MULTIPLY
-    case .DIVIDE: return .DIVIDE
-    case: panicf("Unsupported")
+prefix_binding_power :: proc(op: Lexem_Kind) -> i8 {
+    #partial switch op {
+    case .PLUS, .MINUS: return 5
+    case: unreachable()
     }
 }
 
 // Pratt parsing. https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
-make_tree :: proc(using parser: ^Parser, min_bp : i8 = 0) -> ^Node {
+tree_from_expr :: proc(using parser: ^Parser, allocator: runtime.Allocator, min_bp : i8 = 0) -> Node {
     token := consume_token(parser)
-    assert(token.kind == .NUMERIC, fmt.aprintf("Expected .NUMERIC, got %v\n", token.kind))
-    lhs := new(Node)
-    lhs^ = token.value
+
+    lhs : Node = ---
+    #partial switch token.kind {
+    case .NUMERIC:
+        lhs = token.value
+    case .LPAREN:
+        new_lhs := tree_from_expr(parser, allocator)
+        assert(consume_token(parser).kind == .RPAREN)
+        lhs = new_lhs
+    case .PLUS, .MINUS:
+        r_bp := prefix_binding_power(token.kind)
+        rhs := new_clone(tree_from_expr(parser, allocator, r_bp))
+        lhs = Unary {child = rhs, op = token.kind}
+    case: fmt.panicf("Unexpected token\n")
+    }
+
     for {
-        op := peek_token(parser)
+        op := parser.last_token
         if op.kind == .EOF {
             break
-        }
-        #partial switch op.kind {
-        case .PLUS, .MINUS, .MULTIPLY, .DIVIDE:
-        case:
-            panicf("Got %v", last_token.kind)
         }
 
         l_bp, r_bp := infix_binding_power(op.kind)
         if l_bp < min_bp {
             break
         }
+
         consume_token(parser)
-        rhs := make_tree(parser, r_bp)
-        lhs^ = Binary {
-            lhs_number = lhs,
-            op = lexem_to_op(op.kind),
-            rhs_number = rhs
+
+        rhs := new_clone(tree_from_expr(parser, allocator, r_bp), allocator)
+        new_lhs := new_clone(lhs, allocator)
+        lhs = Binary {
+            left_child = new_lhs,
+            op = op.kind,
+            right_child = rhs
         }
     }
     return lhs
 }
 
-// -1 + 2 * 3 + 4 -> (((-1) + (2 * 3)) + 4)
-//         +
-//        / \
-//       +   4
-//      / \
-//     *   -
-//    / \   \
-//   2   3   1
-
 import "core:fmt"
 import "core:os"
+import "core:strings"
+import "base:runtime"
