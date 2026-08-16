@@ -230,7 +230,8 @@ next_token :: proc(using scanner: ^Scanner) -> Token {
 
     if input[pos] == '\'' {
         pos += 2
-        if pos >= input_len || input[pos] != '\'' do fmt.panicf("Expected terminated char literal, got `%c`", input[pos])
+        if pos >= input_len || input[pos] != '\'' do fmt.panicf("TODO\n", input[pos])
+        value := input[pos-1:pos]
         pos += 1
         return Token {kind = .CHAR_LIT, value = input[pos-2:pos-1]}
     }
