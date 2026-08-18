@@ -1,8 +1,8 @@
 #+feature using-stmt
 package main
-
+// foo(((((-1) + (2 * 3)) + (4 * 5)) + 6), bar(-1+2, -1))
 main :: proc() {
-    s := Scanner {input = "foo(-1 + 2 * 3 + 4, 67) + bar(1+2, 2)"}
+    s := Scanner {input ="-baz(1 + 2) * foo(-1 + 2)"}
     parser := parser_make(s)
     node := tree_from_expr(&parser, context.allocator)
     fmt.println(tree_to_string_v2(node, context.allocator))
