@@ -29,13 +29,23 @@ tree_to_string :: proc(node: Node, allocator: runtime.Allocator) -> string {
             sbprintf(builder, " ")
             impl(v.right_child^, builder)
             sbprint(builder, ")")
+        case Index:
+            sbprint(builder, "([")
+            impl(v.target^, builder)
+            sbprintf(builder, " ")
+            impl(v.inner_expression^, builder)
+            sbprint(builder, ")")
         case Proc_Call:
-            sbprintf(builder, "(Procedure_Call %s: [", v.ident)
-            for i in 0..<len(v.args)-1 {
-                impl(v.args[i], builder)
-                sbprint(builder, ", ")
+            sbprint(builder, "(Procedure_Call ")
+            impl(v.ident^, builder)
+            sbprint(builder, " [")
+            if len(v.args) > 0 {
+                for i in 0..<len(v.args)-1 {
+                    impl(v.args[i], builder)
+                    sbprint(builder, ", ")
+                }
+                impl(v.args[len(v.args) - 1], builder)
             }
-            impl(v.args[len(v.args) - 1], builder)
             sbprint(builder, "]))")
         }
         return string(builder.buf[:])
@@ -58,12 +68,17 @@ Node :: union {
     string,
     Unary,
     Binary,
-    Proc_Call
+    Proc_Call,
+    Index
+}
 
+Index :: struct {
+    target: ^Node,
+    inner_expression: ^Node,
 }
 
 Proc_Call :: struct {
-    ident: string,
+    ident: ^Node,
     args: [dynamic]Node
 }
 
@@ -76,7 +91,7 @@ consume_token :: proc(using parser: ^Parser) -> Token {
     token_to_return := last_token
     last_token = next_token(&scanner)
     #partial switch token_to_return.kind {
-    case .LPAREN..=.RIGHT_SHIFT_EQUAL, .NUMERIC, .IDENT, .COMMA:
+    case .LPAREN..=.RIGHT_SHIFT_EQUAL, .NUMERIC, .IDENT, .COMMA, .LBRACKET, .RBRACKET:
     case:
         fmt.panicf("Expected operator or .NUMERIC, got %v\n", token_to_return.kind)
     }
@@ -103,7 +118,7 @@ prefix_binding_power :: proc(op: Lexem_Kind) -> i8 {
 }
 
 // Pratt parsing. https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
-tree_from_expr :: proc(using parser: ^Parser, allocator: runtime.Allocator, min_bp : i8 = 0) -> Node {
+parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, min_bp : i8 = 0) -> Node {
     token := consume_token(parser)
 
     lhs : Node = ---
@@ -111,12 +126,12 @@ tree_from_expr :: proc(using parser: ^Parser, allocator: runtime.Allocator, min_
     case .NUMERIC, .IDENT:
         lhs = token.value
     case .LPAREN:
-        new_lhs := tree_from_expr(parser, allocator)
+        new_lhs := parse_expression(parser, allocator)
         assert(consume_token(parser).kind == .RPAREN)
         lhs = new_lhs
     case .PLUS, .MINUS:
         r_bp := prefix_binding_power(token.kind)
-        rhs := new_clone(tree_from_expr(parser, allocator, r_bp))
+        rhs := new_clone(parse_expression(parser, allocator, r_bp))
         lhs = Unary {child = rhs, op = token.kind}
         case: fmt.panicf("Unexpected token\n")
     }
@@ -127,17 +142,24 @@ tree_from_expr :: proc(using parser: ^Parser, allocator: runtime.Allocator, min_
             break
         }
         
+        // foo[1+2]
+        if op.kind == .LBRACKET {
+            consume_token(parser)
+            index_expression := parse_expression(parser, allocator, 0)
+            assert(consume_token(parser).kind == .RBRACKET)
+            lhs = Index { target = new_clone(lhs, allocator), inner_expression = new_clone(index_expression)}
+        }
         // foo(1 + 2)
         if op.kind == .LPAREN {
             consume_token(parser)
             args := make([dynamic]Node, allocator)
 
             for {
-                if parser.last_token.kind != .RPAREN do append(&args, tree_from_expr(parser, allocator, 0))
+                if parser.last_token.kind != .RPAREN do append(&args, parse_expression(parser, allocator, 0))
                 if parser.last_token.kind == .COMMA  do consume_token(parser)
                 if parser.last_token.kind == .RPAREN do break
             }
-            call : Node = Proc_Call {ident = token.value, args = args}
+            call : Node = Proc_Call {ident = new_clone(lhs), args = args}
             lhs = call
             consume_token(parser)
             continue
@@ -149,7 +171,7 @@ tree_from_expr :: proc(using parser: ^Parser, allocator: runtime.Allocator, min_
 
             consume_token(parser)
 
-            rhs := new_clone(tree_from_expr(parser, allocator, r_bp), allocator)
+            rhs := new_clone(parse_expression(parser, allocator, r_bp), allocator)
             new_lhs := new_clone(lhs, allocator)
             lhs = Binary {
                 left_child = new_lhs,
