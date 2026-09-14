@@ -31,7 +31,7 @@ Lexem_Kind :: enum {
 }
 
 op_to_str :: #force_inline proc(kind: Lexem_Kind) -> string {
-    #partial switch kind {
+    switch kind {
     case .ASSIGNMENT:        return "="
     case .PLUS:              return "+"
     case .MINUS:             return "-"
@@ -62,8 +62,12 @@ op_to_str :: #force_inline proc(kind: Lexem_Kind) -> string {
     case .BIT_XOR_EQUAL:     return "^="
     case .LEFT_SHIFT_EQUAL:  return "<<="
     case .RIGHT_SHIFT_EQUAL: return ">>="
-    case: unreachable()
+    case .NONE, .ERROR, .EOF, .IF, .NIL, .ELSE, .FOR, .STRUCT, .ENUM, .UNION, .IDENT, .RETURN,
+         .LPAREN, .RPAREN, .LBRACE, .RBRACE, .LBRACKET, .RBRACKET, .DOT, .RANGE, .COLON, .COMMA,
+         .SEMICOLON, .NUMERIC, .STRING_LIT, .CHAR_LIT, .COMPILER_DIRECTIVE:
+        fmt.panicf("not a operator")
     }
+    unreachable()
 }
 
 Token :: struct {
