@@ -46,47 +46,6 @@ Proc_Call :: struct {
     args: [dynamic]Node
 }
 
-tree_node_to_string :: proc(node: Node, allocator := context.allocator) -> string {
-    using strings, fmt
-    builder := builder_make(allocator = allocator)
-    impl :: proc(node: Node, builder: ^strings.Builder) -> string {
-        switch v in node {
-        case string:
-            sbprint(builder, v)
-        case Unary:
-            sbprintf(builder, "(%s ", op_to_str(v.op))
-            impl(v.child^, builder)
-            sbprint(builder, ")")
-        case Binary:
-            sbprintf(builder, "(%s ", op_to_str(v.op))
-            impl(v.left_child^, builder)
-            sbprintf(builder, " ")
-            impl(v.right_child^, builder)
-            sbprint(builder, ")")
-        case Index:
-            sbprint(builder, "([")
-            impl(v.target^, builder)
-            sbprintf(builder, " ")
-            impl(v.inner_expression^, builder)
-            sbprint(builder, ")")
-        case Proc_Call:
-            sbprint(builder, "(_call ")
-            impl(v.target^, builder)
-            sbprint(builder, " ")
-            if len(v.args) > 0 {
-                for i in 0..<len(v.args)-1 {
-                    impl(v.args[i], builder)
-                    sbprint(builder, ", ")
-                }
-                impl(v.args[len(v.args) - 1], builder)
-            }
-            sbprint(builder, ")")
-        }
-        return string(builder.buf[:])
-    }
-    return impl(node, &builder)
-}
-
 consume_token :: proc(using parser: ^Parser) -> Token {
     token_to_return := last_token
     last_token = next_token(&scanner)
@@ -122,7 +81,7 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
     token := consume_token(parser)
 
     lhs : Node = ---
-    #partial switch token.kind {
+    switch token.kind {
     case .NUMERIC, .IDENT:
         lhs = token.value
     case .LPAREN:
@@ -133,7 +92,13 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
         r_bp := prefix_binding_power(token.kind)
         rhs := new_clone(parse_expression(parser, allocator, r_bp))
         lhs = Unary {child = rhs, op = token.kind}
-        case: fmt.panicf("Unexpected token\n")
+    case .NONE, .ERROR, .EOF, .IF, .NIL, .ELSE, .FOR, .STRUCT, .ENUM, .UNION, .RETURN, .RPAREN,
+         .ASSIGNMENT, .MULTIPLY, .DIVIDE, .MODULO, .PLUS_EQUAL, .MINUS_EQUAL, .MULTIPLY_EQUAL, .DIVIDE_EQUAL,
+         .LOGICAL_NEGATION, .LOGICAL_EQUAL, .LOGICAL_NOT_EQUAL, .LOGICAL_AND, .LOGICAL_OR, .LESS, .LESS_EQUAL,
+         .GREATER, .GREATER_EQUAL, .AMPERSAND, .BIT_OR, .BIT_XOR, .BIT_NOT, .LEFT_SHIFT, .RIGHT_SHIFT, .BIT_AND_EQUAL,
+         .BIT_OR_EQUAL, .BIT_XOR_EQUAL, .LEFT_SHIFT_EQUAL, .RIGHT_SHIFT_EQUAL, .LBRACE, .RBRACE, .LBRACKET, .RBRACKET,
+         .DOT, .RANGE, .COLON, .COMMA, .SEMICOLON, .STRING_LIT, .CHAR_LIT,
+         .COMPILER_DIRECTIVE: fmt.panicf("Unexpected token\n")
     }
 
     for {
@@ -292,4 +257,45 @@ tree_node_to_string_llm :: proc(node: Node, allocator: runtime.Allocator) -> str
     }
     print_node(node, &builder, "", true, true)
     return string(builder.buf[:])
+}
+
+tree_node_to_string :: proc(node: Node, allocator := context.allocator) -> string {
+    using strings, fmt
+    builder := builder_make(allocator = allocator)
+    impl :: proc(node: Node, builder: ^strings.Builder) -> string {
+        switch v in node {
+        case string:
+            sbprint(builder, v)
+        case Unary:
+            sbprintf(builder, "(%s ", op_to_str(v.op))
+            impl(v.child^, builder)
+            sbprint(builder, ")")
+        case Binary:
+            sbprintf(builder, "(%s ", op_to_str(v.op))
+            impl(v.left_child^, builder)
+            sbprintf(builder, " ")
+            impl(v.right_child^, builder)
+            sbprint(builder, ")")
+        case Index:
+            sbprint(builder, "([")
+            impl(v.target^, builder)
+            sbprintf(builder, " ")
+            impl(v.inner_expression^, builder)
+            sbprint(builder, ")")
+        case Proc_Call:
+            sbprint(builder, "(_call ")
+            impl(v.target^, builder)
+            sbprint(builder, " ")
+            if len(v.args) > 0 {
+                for i in 0..<len(v.args)-1 {
+                    impl(v.args[i], builder)
+                    sbprint(builder, ", ")
+                }
+                impl(v.args[len(v.args) - 1], builder)
+            }
+            sbprint(builder, ")")
+        }
+        return string(builder.buf[:])
+    }
+    return impl(node, &builder)
 }
