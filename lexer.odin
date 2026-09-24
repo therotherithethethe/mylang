@@ -5,7 +5,7 @@ import "core:unicode"
 import "core:fmt"
 import "core:strings"
 
-Lexem_Kind :: enum {
+Token_Kind :: enum {
     // Utility.
     NONE, ERROR, EOF,
     // Keywords.
@@ -30,7 +30,7 @@ Lexem_Kind :: enum {
     COMPILER_DIRECTIVE
 }
 
-op_to_str :: #force_inline proc(kind: Lexem_Kind) -> string {
+op_to_str :: #force_inline proc(kind: Token_Kind) -> string {
     switch kind {
     case .ASSIGNMENT:        return "="
     case .PLUS:              return "+"
@@ -89,12 +89,12 @@ op_to_str :: #force_inline proc(kind: Lexem_Kind) -> string {
 }
 
 Token :: struct {
-    kind: Lexem_Kind,
-    value: string,
-    row, col: int
+    kind: Token_Kind,
+    text: string,
+    line, col: int
 }
 
-keyword_to_lexem :: #force_inline proc(s: string) -> Lexem_Kind {
+keyword_to_lexem :: #force_inline proc(s: string) -> Token_Kind {
     switch s {
     case "if":     return .IF
     case "nil":    return .NIL
@@ -108,7 +108,7 @@ keyword_to_lexem :: #force_inline proc(s: string) -> Lexem_Kind {
     }
 }
 
-op_to_lexem :: #force_inline proc(s: string) -> Lexem_Kind {
+op_to_lexem :: #force_inline proc(s: string) -> Token_Kind {
     switch s {
     case "=": return .ASSIGNMENT
     case "+": return .PLUS
@@ -158,7 +158,7 @@ op_to_lexem :: #force_inline proc(s: string) -> Lexem_Kind {
     }
 }
 
-// file:row:col: error|warning: msg
+// file:line:col: error|warning: msg
 
 is_whitespace :: proc(c: u8) -> bool {
     switch c {
@@ -186,23 +186,23 @@ is_ident_char :: proc(c: u8) -> bool {
     }
 }
 
-is_number :: proc(c: u8) -> bool {
+is_digit :: proc(c: u8) -> bool {
     return c >= '0' && c <= '9'
 }
 
-Scanner :: struct {
+Tokenizer :: struct {
     file_name: string,
-    row: int,
+    line: int,
     col: int,
     input: string,
     offset: int,
 }
 
-advance_by_amount :: proc(amount: int, using scanner: ^Scanner) {
+advance :: proc(using tokenizer: ^Tokenizer, amount := 1) {
     for _ in 0..<amount {
         if input[offset] == '\n' {
             col = 1
-            row += 1
+            line += 1
         }
         else {
             col += 1
@@ -211,118 +211,118 @@ advance_by_amount :: proc(amount: int, using scanner: ^Scanner) {
     }
 }
 
-current_char :: proc(using scanner: ^Scanner) -> u8 {
+current_char :: proc(using tokenizer: ^Tokenizer) -> u8 {
     return input[offset]
 }
 
-next_token :: proc(using scanner: ^Scanner) -> Token {
+next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
     input_len := len(input)
 
     // Skippable stream
     for {
-        row, col := row, col
-        for offset < input_len && is_whitespace(current_char(scanner)) {
-            advance_by_amount(1, scanner)
+        line, col := line, col
+        for offset < input_len && is_whitespace(current_char(tokenizer)) {
+            advance(tokenizer)
         }
-        if offset >= input_len do return Token {kind = .EOF, row = row, col = col}
+        if offset >= input_len do return Token {kind = .EOF, line = line, col = col}
 
         if strings.has_prefix(input[offset:], "//") {
             idx := strings.index_any(input[offset:], "\n\r")
             if idx < 0 do return Token {kind = .EOF}
-            advance_by_amount(idx, scanner)
+            advance(tokenizer, idx)
             continue
         }
 
         if strings.has_prefix(input[offset:], "/*") {
-            advance_by_amount(2, scanner)
+            advance(tokenizer, 2)
             idx := strings.index(input[offset:], "*/")
             if idx < 0 do panic("Unterminated block comment.")
-            advance_by_amount(idx + 2, scanner)
+            advance(tokenizer, idx + 2)
             continue
         }
         break
     }
 
-    if is_ident_start(current_char(scanner)) {
+    if is_ident_start(current_char(tokenizer)) {
         start := offset
-        row, col := row, col
-        for offset < input_len && is_ident_char(current_char(scanner)) {
-            advance_by_amount(1, scanner)
+        line, col := line, col
+        for offset < input_len && is_ident_char(current_char(tokenizer)) {
+            advance(tokenizer)
         }
         value := input[start:offset]
 
         if lexem := keyword_to_lexem(value); lexem == .IDENT {
-            return Token {kind = .IDENT, value = value, row = row, col = col}
+            return Token {kind = .IDENT, text = value, line = line, col = col}
         } else {
-            return Token {kind = lexem, row = row, col = col}
+            return Token {kind = lexem, line = line, col = col}
         }
     }
 
-    if is_number(current_char(scanner)) {
+    if is_digit(current_char(tokenizer)) {
         start := offset
-        row, col := row, col
-        for offset < input_len && is_number(current_char(scanner)) {
-            advance_by_amount(1, scanner)
+        line, col := line, col
+        for offset < input_len && is_digit(current_char(tokenizer)) {
+            advance(tokenizer)
         }
-        return Token {kind = .NUMERIC, value = input[start:offset], row = row, col = col}
+        return Token {kind = .NUMERIC, text = input[start:offset], line = line, col = col}
     }
 
     if input[offset] == '"' {
-        advance_by_amount(1, scanner)
+        advance(tokenizer)
         start := offset
-        row, col := row, col
+        line, col := line, col
         for offset < input_len && input[offset] != '"' {
-            advance_by_amount(1, scanner)
+            advance(tokenizer)
         }
 
         if offset >= input_len do panic("Unterminated string literal.")
-        advance_by_amount(1, scanner)
-        return Token {kind = .STRING_LIT, value = input[start:offset - 1], row = row, col = col}
+        advance(tokenizer)
+        return Token {kind = .STRING_LIT, text = input[start:offset - 1], line = line, col = col}
     }
 
     if input[offset] == '\'' {
-        advance_by_amount(2, scanner)
-        row, col := row, col
+        advance(tokenizer, 2)
+        line, col := line, col
         if offset >= input_len || input[offset] != '\'' do fmt.panicf("Char character must end with \'\n", input[offset])
         value := input[offset-1:offset]
-        advance_by_amount(1, scanner)
-        return Token {kind = .CHAR_LIT, value = input[offset-2:offset-1], row = row, col = col}
+        advance(tokenizer)
+        return Token {kind = .CHAR_LIT, text = input[offset-2:offset-1], line = line, col = col}
     }
 
     if input[offset] == '#' {
-        advance_by_amount(1, scanner)
+        advance(tokenizer)
         start := offset
-        row, col := row, col
-        for offset < input_len && is_ident_char(current_char(scanner)) {
-            advance_by_amount(1, scanner)
+        line, col := line, col
+        for offset < input_len && is_ident_char(current_char(tokenizer)) {
+            advance(tokenizer)
         }
-        return Token {kind = .COMPILER_DIRECTIVE, value = input[start:offset], row = row, col = col}
+        return Token {kind = .COMPILER_DIRECTIVE, text = input[start:offset], line = line, col = col}
     }
     
     for op_size in 0..<3 {
         size := 3 - op_size
-        row, col := row, col
+        line, col := line, col
         if offset + size <= input_len {
             value := input[offset:offset+size]
             if kind := op_to_lexem(value); kind != .ERROR {
-                advance_by_amount(size, scanner)
-                return Token {kind = kind, row = row, col = col}
+                advance(tokenizer, size)
+                return Token {kind = kind, line = line, col = col}
             }
         }
     }
 
     start := offset
-    err_row, err_col := row, col
+    err_line, err_col := line, col
     offset += 1
     for offset < input_len {
-        c := current_char(scanner)
-        if is_whitespace(c) || is_ident_start(c) || is_number(c) || c == '"' || c == '\'' {
+        c := current_char(tokenizer)
+        if is_whitespace(c) || is_ident_start(c) || is_digit(c) || c == '"' || c == '\'' {
             break
         }
         if op_to_lexem(input[offset:offset+1]) != .ERROR {
             break
         }
-        advance_by_amount(1, scanner)
+        advance(tokenizer)
     }
-    return Token { kind = .ERROR, value = input[start:offset], row = err_row, col = err_col}
+    return Token { kind = .ERROR, text = input[start:offset], line = err_line, col = err_col}
 }

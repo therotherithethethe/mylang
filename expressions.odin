@@ -5,50 +5,111 @@ import "base:runtime"
 import "core:strings"
 import "core:fmt"
 
-Parser :: struct {
-    scanner: Scanner,
-    last_token: Token,
+Var_Decl_Stmt :: struct {
+    name: string,
+    type_name: string,
+    init_expr: Node,
 }
 
-parser_make :: proc(scanner: Scanner) -> Parser {
-    parser := Parser {scanner = scanner}
-    token := next_token(&parser.scanner)
-    parser.last_token = token
+Assign_Stmt :: struct {
+    name: string,
+    value: Node,
+}
+
+Empty_Stmt :: struct {}
+
+Statement :: union {
+    Var_Decl_Stmt,
+    Assign_Stmt,
+    Empty_Stmt,
+}
+
+parse_assign_stmt :: proc(tokenizer: ^Tokenizer, name: string) -> Assign_Stmt {
+    p := make_parser(tokenizer)
+    tree := parse_expression(&p, context.allocator)
+    expect_token(p.current_token.kind, .SEMICOLON)
+    return {name = name, value = tree}
+}
+
+parse_var_decl_stmt :: proc(tokenizer: ^Tokenizer) -> Statement {
+    ident_token := next_token(tokenizer)
+    if ident_token.kind == .EOF do return Empty_Stmt{}
+    expect_token(ident_token.kind, .IDENT)
+
+    if tok := next_token(tokenizer); tok.kind == .ASSIGNMENT {
+        return parse_assign_stmt(tokenizer, ident_token.text)
+    } else {
+        expect_token(tok.kind, .COLON)
+        type_name := next_token(tokenizer)
+        if type_name.kind == .IDENT {
+            expect_token(type_name.kind, .IDENT)
+            expect_token(next_token(tokenizer).kind, .ASSIGNMENT)
+
+            p := make_parser(tokenizer)
+            tree := parse_expression(&p, context.allocator)
+            expect_token(p.current_token.kind, .SEMICOLON)
+            return Var_Decl_Stmt{name = ident_token.text, type_name = type_name.text, init_expr = tree}
+        } else {
+            expect_token(type_name.kind, .ASSIGNMENT)
+
+            p := make_parser(tokenizer)
+            tree := parse_expression(&p, context.allocator)
+            expect_token(p.current_token.kind, .SEMICOLON)
+            return Var_Decl_Stmt{name = ident_token.text, type_name = type_name.text, init_expr = tree}
+        }
+    }
+}
+
+expect_token :: proc(tok: Token_Kind, expected_token_kind: Token_Kind, expr := #caller_expression(tok), loc := #caller_location) {
+	if tok != expected_token_kind {
+        fmt.panicf("expected %v to be %v", tok, expected_token_kind, loc=loc)
+	}
+}
+
+Parser :: struct {
+    tokenizer: ^Tokenizer,
+    current_token: Token,
+}
+
+make_parser :: proc(tokenizer: ^Tokenizer) -> Parser {
+    parser := Parser {tokenizer = tokenizer}
+    token := next_token(parser.tokenizer)
+    parser.current_token = token
     return parser
 }
 
-Unary :: struct {
-    op: Lexem_Kind ,
-    child: ^Node,
+Unary_Expr :: struct {
+    op: Token_Kind,
+    expr: ^Node,
 }
 
-Binary :: struct {
-    left_child: ^Node,
-    op: Lexem_Kind,
-    right_child: ^Node,
+Binary_Expr :: struct {
+    left: ^Node,
+    op: Token_Kind,
+    right: ^Node,
 }
 
 Node :: union {
     string,
-    Unary,
-    Binary,
-    Proc_Call,
-    Index
+    Unary_Expr,
+    Binary_Expr,
+    Call_Expr,
+    Index_Expr,
 }
 
-Index :: struct {
-    target: ^Node,
-    inner_expression: ^Node,
+Index_Expr :: struct {
+    expr: ^Node,
+    index: ^Node,
 }
 
-Proc_Call :: struct {
-    target: ^Node,
-    args: [dynamic]Node
+Call_Expr :: struct {
+    callee: ^Node,
+    args: [dynamic]Node,
 }
 
 consume_token :: proc(using parser: ^Parser) -> Token {
-    token_to_return := last_token
-    last_token = next_token(&scanner)
+    token_to_return := current_token
+    current_token = next_token(tokenizer)
     #partial switch token_to_return.kind {
     case .LPAREN..=.RIGHT_SHIFT_EQUAL, .NUMERIC, .IDENT, .COMMA, .LBRACKET, .RBRACKET:
     case:
@@ -57,7 +118,7 @@ consume_token :: proc(using parser: ^Parser) -> Token {
     return token_to_return
 }
 
-infix_binding_power :: proc(op: Lexem_Kind) -> (l_bp: i8, r_bp: i8) {
+infix_binding_power :: proc(op: Token_Kind) -> (l_bp: i8, r_bp: i8) {
     #partial switch op {
     case .LOGICAL_OR: return 1, 2
     case .BIT_XOR: return 3, 4
@@ -69,7 +130,7 @@ infix_binding_power :: proc(op: Lexem_Kind) -> (l_bp: i8, r_bp: i8) {
     }
 }
 
-prefix_binding_power :: proc(op: Lexem_Kind) -> i8 {
+prefix_binding_power :: proc(op: Token_Kind) -> i8 {
     #partial switch op {
     case .PLUS, .MINUS: return 13
     case: unreachable()
@@ -83,7 +144,7 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
     lhs : Node = ---
     switch token.kind {
     case .NUMERIC, .IDENT:
-        lhs = token.value
+        lhs = token.text
     case .LPAREN:
         new_lhs := parse_expression(parser, allocator)
         assert(consume_token(parser).kind == .RPAREN)
@@ -91,7 +152,7 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
     case .PLUS, .MINUS:
         r_bp := prefix_binding_power(token.kind)
         rhs := new_clone(parse_expression(parser, allocator, r_bp))
-        lhs = Unary {child = rhs, op = token.kind}
+        lhs = Unary_Expr {expr = rhs, op = token.kind}
     case .NONE, .ERROR, .EOF, .IF, .NIL, .ELSE, .FOR, .STRUCT, .ENUM, .UNION, .RETURN, .RPAREN,
          .ASSIGNMENT, .MULTIPLY, .DIVIDE, .MODULO, .PLUS_EQUAL, .MINUS_EQUAL, .MULTIPLY_EQUAL, .DIVIDE_EQUAL,
          .LOGICAL_NEGATION, .LOGICAL_EQUAL, .LOGICAL_NOT_EQUAL, .LOGICAL_AND, .LOGICAL_OR, .LESS, .LESS_EQUAL,
@@ -102,7 +163,7 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
     }
 
     for {
-        op := parser.last_token
+        op := parser.current_token
         if op.kind == .EOF {
             break
         }
@@ -112,7 +173,7 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
             consume_token(parser)
             index_expression := parse_expression(parser, allocator, 0)
             assert(consume_token(parser).kind == .RBRACKET)
-            lhs = Index { target = new_clone(lhs, allocator), inner_expression = new_clone(index_expression)}
+            lhs = Index_Expr {expr = new_clone(lhs, allocator), index = new_clone(index_expression)}
             continue
         }
         // foo(1 + 2)
@@ -121,12 +182,12 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
             args := make([dynamic]Node, allocator)
 
             for {
-                if parser.last_token.kind != .RPAREN do append(&args, parse_expression(parser, allocator, 0))
-                if parser.last_token.kind == .COMMA  do consume_token(parser)
-                if parser.last_token.kind == .RPAREN do break
+                if parser.current_token.kind != .RPAREN do append(&args, parse_expression(parser, allocator, 0))
+                if parser.current_token.kind == .COMMA  do consume_token(parser)
+                if parser.current_token.kind == .RPAREN do break
             }
             assert(consume_token(parser).kind == .RPAREN)
-            lhs = Proc_Call {target = new_clone(lhs), args = args}
+            lhs = Call_Expr {callee = new_clone(lhs), args = args}
             continue
         }
 
@@ -138,10 +199,10 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
 
             rhs := new_clone(parse_expression(parser, allocator, r_bp), allocator)
             new_lhs := new_clone(lhs, allocator)
-            lhs = Binary {
-                left_child = new_lhs,
+            lhs = Binary_Expr {
+                left = new_lhs,
                 op = op.kind,
-                right_child = rhs
+                right = rhs,
             }
             continue
         }
@@ -150,7 +211,7 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
     return lhs
 }
 
-tree_node_to_string_v2 :: proc(node: Node, allocator := context.allocator) -> string {
+format_ast_test1 :: proc(node: Node, allocator := context.allocator) -> string {
     using strings, fmt
     builder := builder_make()
     impl :: proc(node: Node, builder: ^strings.Builder, prefix := "", allocator := context.allocator) -> string {
@@ -158,28 +219,28 @@ tree_node_to_string_v2 :: proc(node: Node, allocator := context.allocator) -> st
         #partial switch value in node {
         case string:
             sbprintf(builder, "%s\n", value)
-        case Unary:
-            sbprintf(builder, "Unary(%s)\n%s└── ", op_to_str(value.op), prefix)
-            impl(value.child^, builder, next_call_prefix)
-        case Index:
+        case Unary_Expr:
+            sbprintf(builder, "Unary(%s)\n%s└── ", token_kind_to_string(value.op), prefix)
+            impl(value.expr^, builder, next_call_prefix)
+        case Index_Expr:
             sbprintf(builder, "Index\n%s├── ", prefix)
-            impl(value.target^, builder, next_call_prefix)
+            impl(value.expr^, builder, next_call_prefix)
 
             sbprintf(builder, "%s└── ", prefix)
-            impl(value.inner_expression^, builder, prefix)
-        case Binary:
-            sbprintf(builder, "Binary(%s)\n%s├── ", op_to_str(value.op), prefix)
-            impl(value.left_child^, builder, next_call_prefix)
+            impl(value.index^, builder, prefix)
+        case Binary_Expr:
+            sbprintf(builder, "Binary(%s)\n%s├── ", token_kind_to_string(value.op), prefix)
+            impl(value.left^, builder, next_call_prefix)
 
             sbprintf(builder, "%s├── ", prefix)
-            impl(value.right_child^, builder, next_call_prefix)
+            impl(value.right^, builder, next_call_prefix)
         }
         return string(builder.buf[:])
     }
     return impl(node, &builder)
 }
 
-tree_node_to_string_test :: proc(node: Node, allocator := context.allocator) -> string {
+format_ast_test2 :: proc(node: Node, allocator := context.allocator) -> string {
     using strings, fmt
     builder := builder_make()
     impl :: proc(node: Node, builder: ^strings.Builder, prefix := "") -> string {
@@ -187,19 +248,19 @@ tree_node_to_string_test :: proc(node: Node, allocator := context.allocator) -> 
         #partial switch value in node {
         case string:
             sbprintf(builder, "%s%s\n", prefix, value)
-        case Binary:
-            sbprintf(builder, "%sBinary(%s)\n", prefix, op_to_str(value.op))
+        case Binary_Expr:
+            sbprintf(builder, "%sBinary(%s)\n", prefix, token_kind_to_string(value.op))
             first_prefix := aprintf("%s│ ", prefix)
-            impl(value.left_child^, builder, first_prefix)
+            impl(value.left^, builder, first_prefix)
             second_prefix := aprintf("%s│ ", prefix)
-            impl(value.right_child^, builder, second_prefix)
+            impl(value.right^, builder, second_prefix)
         }
         return string(builder.buf[:])
     }
     return impl(node, &builder)
 }
 
-tree_node_to_string_llm :: proc(node: Node, allocator: runtime.Allocator) -> string {
+format_ast_tree :: proc(node: Node, allocator: runtime.Allocator) -> string {
     using strings, fmt
     builder := builder_make(allocator = allocator)
 
@@ -231,27 +292,27 @@ tree_node_to_string_llm :: proc(node: Node, allocator: runtime.Allocator) -> str
         switch v in node {
         case string:
             sbprintf(builder, "%s\n", v)
-        case Unary:
-            sbprintf(builder, "Unary(%s)\n", op_to_str(v.op))
-            print_node(v.child^, builder, child_prefix, true, false)
-        case Binary:
-            sbprintf(builder, "Binary(%s)\n", op_to_str(v.op))
-            print_node(v.left_child^, builder, child_prefix, false, false)
-            print_node(v.right_child^, builder, child_prefix, true, false)
-        case Index:
-            sbprint(builder, "Index\n")
-            print_node(v.target^, builder, child_prefix, false, false)
-            print_node(v.inner_expression^, builder, child_prefix, true, false)
-        case Proc_Call:
-            sbprint(builder, "Procedure_Call\n")
+        case Unary_Expr:
+            sbprintf(builder, "Unary_Expr(%s)\n", token_kind_to_string(v.op))
+            print_node(v.expr^, builder, child_prefix, true, false)
+        case Binary_Expr:
+            sbprintf(builder, "Binary_Expr(%s)\n", token_kind_to_string(v.op))
+            print_node(v.left^, builder, child_prefix, false, false)
+            print_node(v.right^, builder, child_prefix, true, false)
+        case Index_Expr:
+            sbprint(builder, "Index_Expr\n")
+            print_node(v.expr^, builder, child_prefix, false, false)
+            print_node(v.index^, builder, child_prefix, true, false)
+        case Call_Expr:
+            sbprint(builder, "Call_Expr\n")
             if len(v.args) > 0 {
-                print_node(v.target^, builder, child_prefix, false, false)
+                print_node(v.callee^, builder, child_prefix, false, false)
                 for arg, i in v.args {
                     is_last_arg := i == len(v.args)-1
                     print_node(arg, builder, child_prefix, is_last_arg, false)
                 }
             } else {
-                sbprintf(builder, "%s└── %s\n", child_prefix, v.target)
+                sbprintf(builder, "%s└── %s\n", child_prefix, v.callee)
             }
         }
     }
@@ -259,32 +320,32 @@ tree_node_to_string_llm :: proc(node: Node, allocator: runtime.Allocator) -> str
     return string(builder.buf[:])
 }
 
-tree_node_to_string :: proc(node: Node, allocator := context.allocator) -> string {
+format_ast_sexpr :: proc(node: Node, allocator := context.allocator) -> string {
     using strings, fmt
     builder := builder_make(allocator = allocator)
     impl :: proc(node: Node, builder: ^strings.Builder) -> string {
         switch v in node {
         case string:
             sbprint(builder, v)
-        case Unary:
-            sbprintf(builder, "(%s ", op_to_str(v.op))
-            impl(v.child^, builder)
+        case Unary_Expr:
+            sbprintf(builder, "(%s ", token_kind_to_string(v.op))
+            impl(v.expr^, builder)
             sbprint(builder, ")")
-        case Binary:
-            sbprintf(builder, "(%s ", op_to_str(v.op))
-            impl(v.left_child^, builder)
+        case Binary_Expr:
+            sbprintf(builder, "(%s ", token_kind_to_string(v.op))
+            impl(v.left^, builder)
             sbprintf(builder, " ")
-            impl(v.right_child^, builder)
+            impl(v.right^, builder)
             sbprint(builder, ")")
-        case Index:
+        case Index_Expr:
             sbprint(builder, "([")
-            impl(v.target^, builder)
+            impl(v.expr^, builder)
             sbprintf(builder, " ")
-            impl(v.inner_expression^, builder)
+            impl(v.index^, builder)
             sbprint(builder, ")")
-        case Proc_Call:
+        case Call_Expr:
             sbprint(builder, "(_call ")
-            impl(v.target^, builder)
+            impl(v.callee^, builder)
             sbprint(builder, " ")
             if len(v.args) > 0 {
                 for i in 0..<len(v.args)-1 {

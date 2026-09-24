@@ -8,11 +8,13 @@ main :: proc() {
 
     path, _ := os.get_relative_path(".", file_name, context.allocator)
     fmt.printfln("\x1b[1m%s\x1b[0m", path)
-    s := Scanner {input = string(data), row = 1, col = 1, file_name = path}
+    s := Tokenizer {input = string(data), line = 1, col = 1, file_name = path}
     for {
-        tok := next_token(&s)
-        // file:row:col: error|warning: msg
-        if tok.kind == .EOF do break
+        stmt := parse_decl_assign_stmt(&s)
+        _, ok := stmt.(Empty_Stmt)
+        if ok do break
+        fmt.println(stmt)
+
     }
     // parser := parser_make(s)
     // node := parse_expression(&parser, context.allocator)
