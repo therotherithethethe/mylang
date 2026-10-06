@@ -6,11 +6,8 @@ import "core:fmt"
 import "core:strings"
 
 Token_Kind :: enum {
-    // Utility.
     NONE, ERROR, EOF,
-    // Keywords.
     IF, NIL, ELSE, FOR, STRUCT, ENUM, UNION, IDENT, RETURN,
-    // Operators.
     LPAREN, RPAREN,
     ASSIGNMENT, PLUS, MINUS, MULTIPLY, DIVIDE, MODULO, PLUS_EQUAL, MINUS_EQUAL, MULTIPLY_EQUAL, DIVIDE_EQUAL,
     LOGICAL_NEGATION, LOGICAL_EQUAL, LOGICAL_NOT_EQUAL, LOGICAL_AND, LOGICAL_OR, LESS, LESS_EQUAL, GREATER, GREATER_EQUAL,
@@ -30,7 +27,7 @@ Token_Kind :: enum {
     COMPILER_DIRECTIVE
 }
 
-op_to_str :: #force_inline proc(kind: Token_Kind) -> string {
+token_kind_to_string :: #force_inline proc(kind: Token_Kind) -> string {
     switch kind {
     case .ASSIGNMENT:        return "="
     case .PLUS:              return "+"
@@ -83,7 +80,7 @@ op_to_str :: #force_inline proc(kind: Token_Kind) -> string {
     case .RETURN:   return "return"
     case .EOF:      return "EOF"
     case .NONE, .ERROR, .IDENT, .NUMERIC, .STRING_LIT, .CHAR_LIT, .COMPILER_DIRECTIVE:
-        fmt.panicf("op_to_str: no string spelling for %v", kind)
+        fmt.panicf("token_kind_to_string: no string spelling for %v", kind)
     }
     unreachable()
 }
@@ -94,7 +91,7 @@ Token :: struct {
     line, col: int
 }
 
-keyword_to_lexem :: #force_inline proc(s: string) -> Token_Kind {
+lookup_keyword :: #force_inline proc(s: string) -> Token_Kind {
     switch s {
     case "if":     return .IF
     case "nil":    return .NIL
@@ -108,7 +105,7 @@ keyword_to_lexem :: #force_inline proc(s: string) -> Token_Kind {
     }
 }
 
-op_to_lexem :: #force_inline proc(s: string) -> Token_Kind {
+lookup_symbol :: #force_inline proc(s: string) -> Token_Kind {
     switch s {
     case "=": return .ASSIGNMENT
     case "+": return .PLUS
@@ -251,10 +248,10 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
         }
         value := input[start:offset]
 
-        if lexem := keyword_to_lexem(value); lexem == .IDENT {
+        if kind := lookup_keyword(value); kind == .IDENT {
             return Token {kind = .IDENT, text = value, line = line, col = col}
         } else {
-            return Token {kind = lexem, line = line, col = col}
+            return Token {kind = kind, line = line, col = col}
         }
     }
 
@@ -304,7 +301,7 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
         line, col := line, col
         if offset + size <= input_len {
             value := input[offset:offset+size]
-            if kind := op_to_lexem(value); kind != .ERROR {
+            if kind := lookup_symbol(value); kind != .ERROR {
                 advance(tokenizer, size)
                 return Token {kind = kind, line = line, col = col}
             }
@@ -319,7 +316,7 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
         if is_whitespace(c) || is_ident_start(c) || is_digit(c) || c == '"' || c == '\'' {
             break
         }
-        if op_to_lexem(input[offset:offset+1]) != .ERROR {
+        if lookup_symbol(input[offset:offset+1]) != .ERROR {
             break
         }
         advance(tokenizer)
