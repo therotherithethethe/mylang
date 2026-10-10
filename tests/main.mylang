@@ -1,12 +1,6 @@
-main :: () {
-    foo : int = 100; //  variable declaration
-    printf("foo = %d\n", foo);
-
-    if foo != 100 {
-        foo = 0;
-    }
-
-    for 0..100 {}
-    bar := Struct.{lol = 123}
-    return 1;
+test := 10;
+{
+    block_test := foo();
 }
+after_block_test := arr[1];
+if stmt {}

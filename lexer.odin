@@ -303,7 +303,7 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
             value := input[offset:offset+size]
             if kind := lookup_symbol(value); kind != .ERROR {
                 advance(tokenizer, size)
-                return Token {kind = kind, line = line, col = col}
+                return Token {kind = kind, line = line, col = col, text = value}
             }
         }
     }

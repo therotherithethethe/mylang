@@ -5,70 +5,48 @@ import "base:runtime"
 import "core:strings"
 import "core:fmt"
 
-Var_Decl_Stmt :: struct {
-    name: string,
-    type_name: string,
-    init_expr: Node,
-}
-
-Assign_Stmt :: struct {
-    name: string,
-    value: Node,
-}
-
-Empty_Stmt :: struct {}
-
-Statement :: union {
-    Var_Decl_Stmt,
-    Assign_Stmt,
-    Empty_Stmt,
-}
-
-parse_assign_stmt :: proc(tokenizer: ^Tokenizer, name: string) -> Assign_Stmt {
-    p := make_parser(tokenizer)
-    tree := parse_expression(&p, context.allocator)
-    expect_token(p.current_token.kind, .SEMICOLON)
-    return {name = name, value = tree}
-}
-
-parse_var_decl_stmt :: proc(tokenizer: ^Tokenizer) -> Statement {
-    ident_token := next_token(tokenizer)
-    if ident_token.kind == .EOF do return Empty_Stmt{}
-    expect_token(ident_token.kind, .IDENT)
-
-    if tok := next_token(tokenizer); tok.kind == .ASSIGNMENT {
-        return parse_assign_stmt(tokenizer, ident_token.text)
-    } else {
-        expect_token(tok.kind, .COLON)
-        type_name := next_token(tokenizer)
-        if type_name.kind == .IDENT {
-            expect_token(type_name.kind, .IDENT)
-            expect_token(next_token(tokenizer).kind, .ASSIGNMENT)
-
-            p := make_parser(tokenizer)
-            tree := parse_expression(&p, context.allocator)
-            expect_token(p.current_token.kind, .SEMICOLON)
-            return Var_Decl_Stmt{name = ident_token.text, type_name = type_name.text, init_expr = tree}
-        } else {
-            expect_token(type_name.kind, .ASSIGNMENT)
-
-            p := make_parser(tokenizer)
-            tree := parse_expression(&p, context.allocator)
-            expect_token(p.current_token.kind, .SEMICOLON)
-            return Var_Decl_Stmt{name = ident_token.text, type_name = type_name.text, init_expr = tree}
-        }
-    }
-}
-
-expect_token :: proc(tok: Token_Kind, expected_token_kind: Token_Kind, expr := #caller_expression(tok), loc := #caller_location) {
-	if tok != expected_token_kind {
-        fmt.panicf("expected %v to be %v", tok, expected_token_kind, loc=loc)
-	}
-}
-
 Parser :: struct {
     tokenizer: ^Tokenizer,
     current_token: Token,
+}
+
+Any_Expr :: union {
+    Identifier_Expr,
+    Literal_Expr,
+    Unary_Expr,
+    Binary_Expr,
+    Call_Expr,
+    Index_Expr,
+}
+
+Identifier_Expr :: struct {
+    name: string,
+}
+
+Literal_Expr :: struct {
+    kind: Token_Kind,
+    text: string,
+}
+
+Unary_Expr :: struct {
+    op: Token_Kind,
+    expr: ^Any_Expr,
+}
+
+Binary_Expr :: struct {
+    left: ^Any_Expr,
+    op: Token_Kind,
+    right: ^Any_Expr,
+}
+
+Index_Expr :: struct {
+    expr: ^Any_Expr,
+    index: ^Any_Expr,
+}
+
+Call_Expr :: struct {
+    callee: ^Any_Expr,
+    args: [dynamic]Any_Expr,
 }
 
 make_parser :: proc(tokenizer: ^Tokenizer) -> Parser {
@@ -78,73 +56,22 @@ make_parser :: proc(tokenizer: ^Tokenizer) -> Parser {
     return parser
 }
 
-Unary_Expr :: struct {
-    op: Token_Kind,
-    expr: ^Node,
-}
-
-Binary_Expr :: struct {
-    left: ^Node,
-    op: Token_Kind,
-    right: ^Node,
-}
-
-Node :: union {
-    string,
-    Unary_Expr,
-    Binary_Expr,
-    Call_Expr,
-    Index_Expr,
-}
-
-Index_Expr :: struct {
-    expr: ^Node,
-    index: ^Node,
-}
-
-Call_Expr :: struct {
-    callee: ^Node,
-    args: [dynamic]Node,
-}
-
 consume_token :: proc(using parser: ^Parser) -> Token {
     token_to_return := current_token
     current_token = next_token(tokenizer)
-    #partial switch token_to_return.kind {
-    case .LPAREN..=.RIGHT_SHIFT_EQUAL, .NUMERIC, .IDENT, .COMMA, .LBRACKET, .RBRACKET:
-    case:
-        fmt.panicf("Expected operator or .NUMERIC, got %v\n", token_to_return.kind)
-    }
     return token_to_return
 }
 
-infix_binding_power :: proc(op: Token_Kind) -> (l_bp: i8, r_bp: i8) {
-    #partial switch op {
-    case .LOGICAL_OR: return 1, 2
-    case .BIT_XOR: return 3, 4
-    case .AMPERSAND: return 5, 6
-    case .RIGHT_SHIFT, .LEFT_SHIFT: return 7, 8
-    case .PLUS, .MINUS: return 9, 10
-    case .MULTIPLY, .DIVIDE, .MODULO: return 11, 12
-    case: return -1, -1
-    }
-}
-
-prefix_binding_power :: proc(op: Token_Kind) -> i8 {
-    #partial switch op {
-    case .PLUS, .MINUS: return 13
-    case: unreachable()
-    }
-}
-
 // Pratt parsing. https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
-parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, min_bp : i8 = 0) -> Node {
+parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, min_bp : i8 = 0) -> Any_Expr {
     token := consume_token(parser)
 
-    lhs : Node = ---
+    lhs : Any_Expr = ---
     switch token.kind {
-    case .NUMERIC, .IDENT:
-        lhs = token.text
+    case .IDENT:
+        lhs = Identifier_Expr{name = token.text}
+    case .NUMERIC:
+        lhs = Literal_Expr{kind = token.kind, text = token.text}
     case .LPAREN:
         new_lhs := parse_expression(parser, allocator)
         assert(consume_token(parser).kind == .RPAREN)
@@ -159,7 +86,7 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
          .GREATER, .GREATER_EQUAL, .AMPERSAND, .BIT_OR, .BIT_XOR, .BIT_NOT, .LEFT_SHIFT, .RIGHT_SHIFT, .BIT_AND_EQUAL,
          .BIT_OR_EQUAL, .BIT_XOR_EQUAL, .LEFT_SHIFT_EQUAL, .RIGHT_SHIFT_EQUAL, .LBRACE, .RBRACE, .LBRACKET, .RBRACKET,
          .DOT, .RANGE, .COLON, .COMMA, .SEMICOLON, .STRING_LIT, .CHAR_LIT,
-         .COMPILER_DIRECTIVE: fmt.panicf("Unexpected token\n")
+         .COMPILER_DIRECTIVE: fmt.panicf("Expected expression, got %v", token.text)
     }
 
     for {
@@ -179,7 +106,7 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
         // foo(1 + 2)
         if op.kind == .LPAREN {
             consume_token(parser)
-            args := make([dynamic]Node, allocator)
+            args := make([dynamic]Any_Expr, allocator)
 
             for {
                 if parser.current_token.kind != .RPAREN do append(&args, parse_expression(parser, allocator, 0))
@@ -210,3 +137,21 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
     return lhs
 }
 
+infix_binding_power :: proc(op: Token_Kind) -> (l_bp: i8, r_bp: i8) {
+    #partial switch op {
+    case .LOGICAL_OR: return 1, 2
+    case .BIT_XOR: return 3, 4
+    case .AMPERSAND: return 5, 6
+    case .RIGHT_SHIFT, .LEFT_SHIFT: return 7, 8
+    case .PLUS, .MINUS: return 9, 10
+    case .MULTIPLY, .DIVIDE, .MODULO: return 11, 12
+    case: return -1, -1
+    }
+}
+
+prefix_binding_power :: proc(op: Token_Kind) -> i8 {
+    #partial switch op {
+    case .PLUS, .MINUS: return 13
+    case: unreachable()
+    }
+}

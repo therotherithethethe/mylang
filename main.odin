@@ -8,19 +8,27 @@ main :: proc() {
 
     path, _ := os.get_relative_path(".", file_name, context.temp_allocator)
     fmt.printfln("\x1b[1m%s\x1b[0m", path)
-    s := Tokenizer {input = string(data), line = 1, col = 1, file_name = path}
+    tokenizer := Tokenizer {
+        input = string(data),
+        line = 1,
+        col = 1,
+        file_name = path,
+    }
+
+    ast_arena: mem.Dynamic_Arena
+    mem.dynamic_arena_init(&ast_arena)
+    defer mem.dynamic_arena_destroy(&ast_arena)
+    ast_allocator := mem.dynamic_arena_allocator(&ast_arena)
+
+    parser := make_parser(&tokenizer)
     for {
-        stmt := parse_var_decl_stmt(&s)
+        stmt := parse_statement(&parser, ast_allocator)
         _, ok := stmt.(Empty_Stmt)
         if ok do break
-        fmt.println(stmt)
-
+        fmt.printfln("%#v", stmt)
     }
-    // parser := make_parser(&s)
-    // node := parse_expression(&parser, context.allocator)
-    // node_string := format_ast_tree(node, context.allocator)
-    // fmt.println(node_string)
 }
 
+import "core:mem"
 import "core:fmt"
 import "core:os"
