@@ -17,6 +17,13 @@ Any_Expr :: union {
     Binary_Expr,
     Call_Expr,
     Index_Expr,
+    Proc_Expr,
+}
+
+Proc_Expr :: struct {
+    parameters: [dynamic]Var_Decl_Stmt,
+    return_type: Maybe(string),
+    body: Block_Stmt,
 }
 
 Identifier_Expr :: struct {
@@ -62,6 +69,7 @@ consume_token :: proc(using parser: ^Parser) -> Token {
     return token_to_return
 }
 
+
 // Pratt parsing. https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
 parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, min_bp : i8 = 0) -> Any_Expr {
     token := consume_token(parser)
@@ -73,6 +81,35 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
     case .NUMERIC:
         lhs = Literal_Expr{kind = token.kind, text = token.text}
     case .LPAREN:
+        if parser.current_token.kind == .IDENT {
+            tokenizer_temp := parser.tokenizer^ // for lookahead
+            if next_token(&tokenizer_temp).kind == .COLON {
+                parameters := make([dynamic]Var_Decl_Stmt)
+
+                for {
+                    param_name := expect_token(parser, .IDENT).text
+                    expect_token(parser, .COLON)
+                    type := expect_token(parser, .IDENT).text
+                    append(&parameters, {
+                        name = param_name, 
+                        type_name = type, 
+                        init_expr = nil
+                        })
+                    if parser.current_token.kind == .RPAREN {
+                        expect_token(parser, .RPAREN)
+                        break
+                    }
+                    expect_token(parser, .COMMA)
+                }
+                
+                proc_body := parse_block_stmt(parser, allocator)
+                return Proc_Expr {
+                    parameters = parameters,
+                    return_type = nil,
+                    body = proc_body
+                }
+            }
+        }
         new_lhs := parse_expression(parser, allocator)
         assert(consume_token(parser).kind == .RPAREN)
         lhs = new_lhs
@@ -86,7 +123,7 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
          .GREATER, .GREATER_EQUAL, .AMPERSAND, .BIT_OR, .BIT_XOR, .BIT_NOT, .LEFT_SHIFT, .RIGHT_SHIFT, .BIT_AND_EQUAL,
          .BIT_OR_EQUAL, .BIT_XOR_EQUAL, .LEFT_SHIFT_EQUAL, .RIGHT_SHIFT_EQUAL, .LBRACE, .RBRACE, .LBRACKET, .RBRACKET,
          .DOT, .RANGE, .COLON, .COMMA, .SEMICOLON, .STRING_LIT, .CHAR_LIT,
-         .COMPILER_DIRECTIVE: fmt.panicf("Expected expression, got %v", token.text)
+         .COMPILER_DIRECTIVE: fmt.panicf("Expected expression, got %v", token)
     }
 
     for {

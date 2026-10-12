@@ -1,6 +1,20 @@
-test := 10;
+before_block := 10;
 {
-    block_test := foo();
+    inside_block := foo();
 }
-after_block_test := arr[1];
-if stmt {}
+after_block := arr[1];
+if 1 + 1 {
+    inside_if := 10;
+} else if 2 + 2 {
+    inside_else_if := 67;
+} else {
+    inside_else := 69;
+}
+var_decl_without_init: int = 10;
+return 10 + foo(1); after_return_same_line: Your_Sussy = foo(arr[base[-1-1*2] * 10]);
+
+proc_decl := (a: int, b: uint) {
+    if 0 {
+       asjdh := 1 + 2;
+    }
+}

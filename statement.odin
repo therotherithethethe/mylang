@@ -5,31 +5,13 @@ import "core:fmt"
 import r "base:runtime"
 
 Block_Stmt :: struct {
-	stmts: [dynamic]Statement,
-}
-
-parse_block_stmt :: proc(p: ^Parser, allocator: r.Allocator) -> Block_Stmt {
-	expect_token(p, .LBRACE)
-	stmts := make([dynamic]Statement)
-	for {
-		stmt := parse_statement(p, allocator)
-		_, ok := stmt.(Empty_Stmt)
-		if ok do break
-
-        if p.current_token.kind == .RBRACE { 
-            consume_token(p)
-            break
-        }
-
-        append(&stmts, stmt)
-	}
-	return {stmts = stmts}
+	stmts: [dynamic]Any_Stmt,
 }
 
 Var_Decl_Stmt :: struct {
 	name:      string,
 	type_name: Maybe(string),
-	init_expr: Any_Expr,
+	init_expr: Maybe(Any_Expr),
 }
 
 Assign_Stmt :: struct {
@@ -39,36 +21,91 @@ Assign_Stmt :: struct {
 
 Empty_Stmt :: struct {}
 
-Statement :: union {
+Any_Stmt :: union {
 	Var_Decl_Stmt,
 	Assign_Stmt,
 	Empty_Stmt,
-    Block_Stmt
+    Block_Stmt,
+    If_Stmt,
+    Return_Stmt,
 }
 
-parse_assign_stmt :: proc(p: ^Parser, name: string, allocator: r.Allocator) -> Assign_Stmt {
-	tree := parse_expression(p, allocator)
-	expect_token(p, .SEMICOLON)
-	consume_token(p)
-	return {name = name, value = tree}
+Return_Stmt :: struct {
+    expr: Maybe(Any_Expr)
 }
 
-parse_statement :: proc(p: ^Parser, allocator: r.Allocator) -> Statement {
+If_Stmt :: struct {
+    cond_expr: Any_Expr,
+    blk_stmt: Block_Stmt,
+    else_branch: Maybe(^Any_Stmt)
+}
+
+parse_block_stmt :: proc(p: ^Parser, allocator: r.Allocator) -> Block_Stmt {
+    expect_token(p, .LBRACE)
+    if p.current_token.kind == .RBRACE { 
+        expect_token(p, .RBRACE)
+        return {}
+    }
+
+    stmts := make([dynamic]Any_Stmt, allocator)
+    for {
+        if p.current_token.kind == .EOF || p.current_token.kind == .RBRACE do break
+        append(&stmts, parse_statement(p, allocator))
+    }
+    expect_token(p, .RBRACE)
+    return {stmts}
+}
+
+parse_if_stmt :: proc(p: ^Parser, allocator: r.Allocator) -> If_Stmt {
+    expect_token(p, .IF)
+    expr := parse_expression(p, context.allocator)
+    then_blk := parse_block_stmt(p, allocator)
+    else_blk: ^Any_Stmt
+    if p.current_token.kind == .ELSE {
+        expect_token(p, .ELSE)
+        if p.current_token.kind == .IF {
+            else_blk = new_clone(Any_Stmt(parse_if_stmt(p, allocator)))
+        } else {
+            else_blk = new_clone(Any_Stmt(parse_block_stmt(p, allocator)))
+        }
+    }
+    return If_Stmt {
+        cond_expr = expr,
+        blk_stmt = then_blk,
+        else_branch = else_blk
+    }
+}
+
+parse_statement :: proc(p: ^Parser, allocator: r.Allocator) -> Any_Stmt {
 	if p.current_token.kind == .EOF do return Empty_Stmt{}
-    if p.current_token.kind == .LBRACE { // {stmt1; stmt2;}
+
+    if p.current_token.kind == .LBRACE {
         return parse_block_stmt(p, allocator)
+    }
+    if p.current_token.kind == .IF {
+        return parse_if_stmt(p, allocator)
+    }
+    if p.current_token.kind == .RETURN {
+        expect_token(p, .RETURN)
+        return_expr: Maybe(Any_Expr)
+        if p.current_token.kind != .SEMICOLON {
+            return_expr = parse_expression(p, allocator)
+        }
+        expect_token(p, .SEMICOLON)
+        return Return_Stmt {
+            expr = return_expr
+        }
     }
 	ident_token := expect_token(p, .IDENT)
 
     #partial switch p.current_token.kind {
     case .ASSIGNMENT:
         expect_token(p, .ASSIGNMENT)
-        tree := parse_expression(p, context.allocator)
+        expr := parse_expression(p, allocator)
         expect_token(p, .SEMICOLON)
-        consume_token(p)
         return Assign_Stmt {
             name = ident_token.text,
-            value = tree
+            value = expr
         }
     case .COLON:
         expect_token(p, .COLON)
@@ -76,10 +113,14 @@ parse_statement :: proc(p: ^Parser, allocator: r.Allocator) -> Statement {
         if p.current_token.kind ==  .IDENT {
             type_name = expect_token(p, .IDENT).text
         }
-        expect_token(p, .ASSIGNMENT)
-        tree := parse_expression(p, context.allocator)
-        expect_token(p, .SEMICOLON)
-        consume_token(p)
+        tree: Maybe(Any_Expr)
+        if p.current_token.kind == .ASSIGNMENT {
+            expect_token(p, .ASSIGNMENT)
+            tree = parse_expression(p, allocator)
+        }
+        if _, is_proc := tree.(Any_Expr).(Proc_Expr); !is_proc {
+            expect_token(p, .SEMICOLON)
+        }
         return Var_Decl_Stmt {
             name = ident_token.text,
             type_name = type_name,

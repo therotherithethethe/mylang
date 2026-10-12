@@ -251,7 +251,7 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
         if kind := lookup_keyword(value); kind == .IDENT {
             return Token {kind = .IDENT, text = value, line = line, col = col}
         } else {
-            return Token {kind = kind, line = line, col = col}
+            return Token {kind = kind, line = line, col = col, text = value}
         }
     }
 
