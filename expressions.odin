@@ -22,8 +22,8 @@ Any_Expr :: union {
 
 Proc_Expr :: struct {
     parameters: [dynamic]Var_Decl_Stmt,
-    return_type: Maybe(string),
     body: Block_Stmt,
+    return_type: Maybe(string),
 }
 
 Identifier_Expr :: struct {
@@ -71,14 +71,14 @@ consume_token :: proc(using parser: ^Parser) -> Token {
 
 
 // Pratt parsing. https://matklad.github.io/2020/04/13/simple-but-powerful-pratt-parsing.html
-parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, min_bp : i8 = 0) -> Any_Expr {
+parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, min_bp : i8 = 0, loc := #caller_location) -> Any_Expr {
     token := consume_token(parser)
 
     lhs : Any_Expr = ---
     switch token.kind {
     case .IDENT:
         lhs = Identifier_Expr{name = token.text}
-    case .NUMERIC:
+    case .NUMERIC, .STRING_LIT, .CHAR_LIT:
         lhs = Literal_Expr{kind = token.kind, text = token.text}
     case .LPAREN:
         if parser.current_token.kind == .IDENT {
@@ -101,29 +101,46 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
                     }
                     expect_token(parser, .COMMA)
                 }
-                
+
+                proc_type: Maybe(string)
+                if parser.current_token.kind == .RIGHT_ARROW {
+                    expect_token(parser, .RIGHT_ARROW)
+                    proc_type = expect_token(parser, .IDENT).text
+                }
                 proc_body := parse_block_stmt(parser, allocator)
-                return Proc_Expr {
+                lhs = Proc_Expr {
                     parameters = parameters,
-                    return_type = nil,
+                    return_type = proc_type,
                     body = proc_body
                 }
             }
+        } else if parser.current_token.kind == .RPAREN {
+            expect_token(parser, .RPAREN)
+            proc_type: Maybe(string)
+            if parser.current_token.kind == .RIGHT_ARROW {
+                expect_token(parser, .RIGHT_ARROW)
+                proc_type = expect_token(parser, .IDENT).text
+            }
+            proc_body := parse_block_stmt(parser, allocator)
+            lhs = Proc_Expr {
+                return_type = proc_type,
+                body = proc_body
+            }
+        } else {
+            lhs = parse_expression(parser, allocator)
+            expect_token(parser, .RPAREN)
         }
-        new_lhs := parse_expression(parser, allocator)
-        assert(consume_token(parser).kind == .RPAREN)
-        lhs = new_lhs
     case .PLUS, .MINUS:
         r_bp := prefix_binding_power(token.kind)
-        rhs := new_clone(parse_expression(parser, allocator, r_bp))
+        rhs := new_clone(parse_expression(parser, allocator, r_bp), allocator)
         lhs = Unary_Expr {expr = rhs, op = token.kind}
-    case .NONE, .ERROR, .EOF, .IF, .NIL, .ELSE, .FOR, .STRUCT, .ENUM, .UNION, .RETURN, .RPAREN,
+    case .RIGHT_ARROW, .NONE, .ERROR, .EOF, .IF, .NIL, .ELSE, .FOR, .STRUCT, .ENUM, .UNION, .RETURN, .RPAREN,
          .ASSIGNMENT, .MULTIPLY, .DIVIDE, .MODULO, .PLUS_EQUAL, .MINUS_EQUAL, .MULTIPLY_EQUAL, .DIVIDE_EQUAL,
          .LOGICAL_NEGATION, .LOGICAL_EQUAL, .LOGICAL_NOT_EQUAL, .LOGICAL_AND, .LOGICAL_OR, .LESS, .LESS_EQUAL,
          .GREATER, .GREATER_EQUAL, .AMPERSAND, .BIT_OR, .BIT_XOR, .BIT_NOT, .LEFT_SHIFT, .RIGHT_SHIFT, .BIT_AND_EQUAL,
          .BIT_OR_EQUAL, .BIT_XOR_EQUAL, .LEFT_SHIFT_EQUAL, .RIGHT_SHIFT_EQUAL, .LBRACE, .RBRACE, .LBRACKET, .RBRACKET,
-         .DOT, .RANGE, .COLON, .COMMA, .SEMICOLON, .STRING_LIT, .CHAR_LIT,
-         .COMPILER_DIRECTIVE: fmt.panicf("Expected expression, got %v", token)
+         .DOT, .RANGE, .COLON, .COMMA, .SEMICOLON,
+         .COMPILER_DIRECTIVE: fmt.panicf("Expected expression, got %v", token, loc = loc)
     }
 
     for {
@@ -137,28 +154,34 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
             consume_token(parser)
             index_expression := parse_expression(parser, allocator, 0)
             assert(consume_token(parser).kind == .RBRACKET)
-            lhs = Index_Expr {expr = new_clone(lhs, allocator), index = new_clone(index_expression)}
+            lhs = Index_Expr {expr = new_clone(lhs, allocator), index = new_clone(index_expression, allocator)}
             continue
         }
         // foo(1 + 2)
         if op.kind == .LPAREN {
             consume_token(parser)
-            args := make([dynamic]Any_Expr, allocator)
-
-            for {
-                if parser.current_token.kind != .RPAREN do append(&args, parse_expression(parser, allocator, 0))
-                if parser.current_token.kind == .COMMA  do consume_token(parser)
-                if parser.current_token.kind == .RPAREN do break
+            args: [dynamic]Any_Expr
+            if parser.current_token.kind == .RPAREN {
+                expect_token(parser, .RPAREN)
+            } else {
+                args = make([dynamic]Any_Expr, allocator)
+                for {
+                    append(&args, parse_expression(parser, allocator, 0))
+                    if parser.current_token.kind == .RPAREN {
+                        expect_token(parser, .RPAREN)
+                        break
+                    } else {
+                        expect_token(parser, .COMMA)
+                    }
+                }
             }
-            assert(consume_token(parser).kind == .RPAREN)
-            lhs = Call_Expr {callee = new_clone(lhs), args = args}
+            lhs = Call_Expr {callee = new_clone(lhs, allocator), args = args}
             continue
         }
 
         l_bp, r_bp := infix_binding_power(op.kind)
         if l_bp != -1 {
             if l_bp < min_bp do break
-
             consume_token(parser)
 
             rhs := new_clone(parse_expression(parser, allocator, r_bp), allocator)

@@ -20,6 +20,7 @@ Token_Kind :: enum {
     COLON,
     COMMA,
     SEMICOLON,
+    RIGHT_ARROW,
 
     NUMERIC,
     STRING_LIT,
@@ -29,6 +30,7 @@ Token_Kind :: enum {
 
 token_kind_to_string :: #force_inline proc(kind: Token_Kind) -> string {
     switch kind {
+    case .RIGHT_ARROW:       return "->"
     case .ASSIGNMENT:        return "="
     case .PLUS:              return "+"
     case .MINUS:             return "-"
@@ -151,6 +153,7 @@ lookup_symbol :: #force_inline proc(s: string) -> Token_Kind {
     case "}": return .RBRACE
     case ",": return .COMMA
     case ";": return .SEMICOLON
+    case "->": return .RIGHT_ARROW
     case: return .ERROR
     }
 }
@@ -195,7 +198,9 @@ Tokenizer :: struct {
     offset: int,
 }
 
-advance :: proc(using tokenizer: ^Tokenizer, amount := 1) {
+advance :: proc(using tokenizer: ^Tokenizer, amount := 1, loc := #caller_location) {
+    assert(amount >= 0)
+    assert(amount + offset <= len(input))
     for _ in 0..<amount {
         if input[offset] == '\n' {
             col = 1
@@ -280,7 +285,7 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
     if input[offset] == '\'' {
         advance(tokenizer, 2)
         line, col := line, col
-        if offset >= input_len || input[offset] != '\'' do fmt.panicf("Char character must end with \'\n", input[offset])
+        if offset >= input_len || input[offset] != '\'' do fmt.panicf("Char character must end with \'\n")
         value := input[offset-1:offset]
         advance(tokenizer)
         return Token {kind = .CHAR_LIT, text = input[offset-2:offset-1], line = line, col = col}

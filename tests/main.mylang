@@ -1,20 +1,23 @@
-before_block := 10;
-{
-    inside_block := foo();
-}
-after_block := arr[1];
-if 1 + 1 {
-    inside_if := 10;
-} else if 2 + 2 {
-    inside_else_if := 67;
-} else {
-    inside_else := 69;
-}
-var_decl_without_init: int = 10;
-return 10 + foo(1); after_return_same_line: Your_Sussy = foo(arr[base[-1-1*2] * 10]);
+foo('a');
+// main :: () -> int {
+//     if true {
+//         calling_your_mom();
+//     } else if false {
+//         foo := 1;
+//     } else {
+//         print("Hello, World\n");
+//     }
+//     anon_procedure_example_and_call();
+//     return 0;
+// }
 
-proc_decl := (a: int, b: uint) {
-    if 0 {
-       asjdh := 1 + 2;
-    }
-}
+// int main(void) {
+//     if (true) {
+//         calling_your_mom();
+//     } else if (false) {
+//         int foo = 1;
+//     } else {
+//         print("Hello, World\n");
+//     }
+//     return 0;
+// }

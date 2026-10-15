@@ -7,7 +7,7 @@ main :: proc() {
         file_name,
         context.temp_allocator,
         ) or_else fmt.panicf("Error reading a file `%s`\n", file_name)
-
+    
     path := os.get_relative_path(
         ".",
         file_name,
@@ -31,7 +31,7 @@ main :: proc() {
         stmt := parse_statement(&parser, ast_allocator)
         _, ok := stmt.(Empty_Stmt)
         if ok do break
-        fmt.printfln("%#v", stmt)
+        print_value(stmt, 16)
     }
 }
 
