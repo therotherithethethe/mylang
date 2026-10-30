@@ -31,7 +31,8 @@ main :: proc() {
         stmt := parse_statement(&parser, ast_allocator)
         _, ok := stmt.(Empty_Stmt)
         if ok do break
-        print_value(stmt, 16)
+        // print_value(stmt, 16)
+        fmt.println(stmt_to_cliteral(stmt))
     }
 }
 
