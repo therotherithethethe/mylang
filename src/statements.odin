@@ -4,8 +4,21 @@ package main
 import "core:fmt"
 import r "base:runtime"
 
-Block_Stmt :: struct {
-	stmts: [dynamic]Any_Stmt,
+Any_Stmt :: union {
+    Empty_Stmt,
+    Assign_Stmt,
+    Var_Decl_Stmt,
+    Return_Stmt,
+    Block_Stmt,
+    If_Stmt,
+    Expr_Stmt,
+}
+
+Empty_Stmt :: struct {}
+
+Assign_Stmt :: struct {
+    name:  string,
+    value: Any_Expr,
 }
 
 Var_Decl_Stmt :: struct {
@@ -15,35 +28,22 @@ Var_Decl_Stmt :: struct {
 	init_expr: Maybe(Any_Expr),
 }
 
-Expr_Stmt :: struct {
-    expr: Any_Expr
-}
-
-Assign_Stmt :: struct {
-	name:  string,
-	value: Any_Expr,
-}
-
-Empty_Stmt :: struct {}
-
-Any_Stmt :: union {
-	Var_Decl_Stmt,
-	Assign_Stmt,
-	Empty_Stmt,
-    Block_Stmt,
-    If_Stmt,
-    Return_Stmt,
-    Expr_Stmt
-}
-
 Return_Stmt :: struct {
     expr: Maybe(Any_Expr)
+}
+
+Block_Stmt :: struct {
+    stmts: [dynamic]Any_Stmt,
 }
 
 If_Stmt :: struct {
     cond_expr: Any_Expr,
     blk_stmt: Block_Stmt,
     else_branch: Maybe(^Any_Stmt)
+}
+
+Expr_Stmt :: struct {
+    expr: Any_Expr
 }
 
 parse_block_stmt :: proc(p: ^Parser, allocator: r.Allocator) -> Block_Stmt {
@@ -70,9 +70,9 @@ parse_if_stmt :: proc(p: ^Parser, allocator: r.Allocator) -> If_Stmt {
     if p.current_token.kind == .ELSE {
         expect_token(p, .ELSE)
         if p.current_token.kind == .IF {
-            else_blk = new_clone(Any_Stmt(parse_if_stmt(p, allocator)))
+            else_blk = new_clone(Any_Stmt(parse_if_stmt(p, allocator)), allocator)
         } else {
-            else_blk = new_clone(Any_Stmt(parse_block_stmt(p, allocator)))
+            else_blk = new_clone(Any_Stmt(parse_block_stmt(p, allocator)), allocator)
         }
     }
     return If_Stmt {
@@ -102,7 +102,6 @@ parse_statement :: proc(p: ^Parser, allocator: r.Allocator) -> Any_Stmt {
             expr = return_expr
         }
     }
-	// ident_token := expect_token(p, .IDENT)
     foo := parse_expression(p, allocator)
 
     #partial switch p.current_token.kind {
@@ -117,35 +116,42 @@ parse_statement :: proc(p: ^Parser, allocator: r.Allocator) -> Any_Stmt {
         }
     case .COLON:
         ident := foo.(Identifier_Expr) or_else fmt.panicf("Expected identifier, got %v\n", foo)
-        expect_token(p, .COLON)
-        type_name : Maybe(string)
-        if p.current_token.kind ==  .IDENT {
-            type_name = expect_token(p, .IDENT).text
-        }
-        tree: Maybe(Any_Expr)
-        
-        is_constant := false
-        current_kind := p.current_token.kind
-        if p.current_token.kind == .ASSIGNMENT || p.current_token.kind == .COLON {
-            expect_token(p, p.current_token.kind)
-            if current_kind == .COLON do is_constant = true
-            tree = parse_expression(p, allocator)
-        } else {
-            fmt.panicf("Expected `=` or ':' for variable declaration.")
-        }
-        if _, is_proc := tree.(Any_Expr).(Proc_Expr); !is_proc {
-            expect_token(p, .SEMICOLON)
-        }
-        return Var_Decl_Stmt {
-            name = ident.name,
-            is_constant = is_constant,
-            type_name = type_name,
-            init_expr = tree,
-        }
+        return parse_var_decl_stmt_with_name(p, ident.name, allocator)
     case: 
         expect_token(p, .SEMICOLON)
         return Expr_Stmt {expr = foo}
     }
+}
+
+parse_var_decl_stmt_with_name :: proc(p: ^Parser, name: string, allocator: r.Allocator) -> Var_Decl_Stmt {
+    decl := Var_Decl_Stmt {name = name}
+    expect_token(p, .COLON)
+
+    if p.current_token.kind == .IDENT {
+        decl.type_name = expect_token(p, .IDENT).text
+    }
+
+    #partial switch p.current_token.kind {
+    case .SEMICOLON:
+        if _, has_type := decl.type_name.(string); !has_type {
+            fmt.panicf("Declaration `%s` requires a type or initializer.", name)
+        }
+        expect_token(p, .SEMICOLON)
+        return decl
+    case .ASSIGNMENT, .COLON:
+        decl.is_constant = consume_token(p).kind == .COLON
+    case:
+        fmt.panicf("Expected '=', ':' or ';' after declaration `%s`, got %v.", name, p.current_token.kind)
+    }
+
+    init_expr := parse_expression(p, allocator)
+    decl.init_expr = init_expr
+
+    #partial switch _ in init_expr {
+    case Proc_Expr, Struct_Type_Expression:
+    case: expect_token(p, .SEMICOLON)
+    }
+    return decl
 }
 
 expect_token :: proc(p: ^Parser, expected: Token_Kind, loc := #caller_location) -> Token {

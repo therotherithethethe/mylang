@@ -35,6 +35,9 @@ format_ast_tree :: proc(expr: Any_Expr, allocator: runtime.Allocator) -> string 
             child_prefix = ""
         }
         switch v in expr {
+        case Struct_Type_Expression:
+            //TODO:
+            fmt.panicf("printing `%v` is not implemented\n", v)
         case Proc_Expr:
             sbprintf(builder, "%#v", v)
         case Identifier_Expr:
@@ -74,6 +77,9 @@ format_ast_sexpr :: proc(expr: Any_Expr, allocator := context.allocator) -> stri
     builder := builder_make(allocator = allocator)
     impl :: proc(expr: Any_Expr, builder: ^strings.Builder) -> string {
         switch v in expr {
+        case Struct_Type_Expression:
+            //TODO:
+            unimplemented("printning Struct_Type_Expression is not implemented\n")
         case Proc_Expr:
             sbprintf(builder, "%#v", v)
         case Identifier_Expr:

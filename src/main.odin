@@ -27,15 +27,19 @@ main :: proc() {
     ast_allocator := mem.dynamic_arena_allocator(&ast_arena)
 
     parser := make_parser(&tokenizer)
+    builder := strings.builder_make(ast_allocator)
     for {
         stmt := parse_statement(&parser, ast_allocator)
-        _, ok := stmt.(Empty_Stmt)
-        if ok do break
-        // print_value(stmt, 16)
-        fmt.println(stmt_to_cliteral(stmt))
+
+        _, is_empty_stmt := stmt.(Empty_Stmt)
+        if is_empty_stmt do break
+        builder_append_stmt_to_c(&builder, stmt, 0)
+        fmt.println(strings.to_string(builder))
+        strings.builder_reset(&builder)
     }
 }
 
 import "core:mem"
+import "core:strings"
 import "core:fmt"
 import "core:os"

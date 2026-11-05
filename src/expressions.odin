@@ -10,6 +10,10 @@ Parser :: struct {
     current_token: Token,
 }
 
+Struct_Type_Expression :: struct {
+    fields: []Var_Decl_Stmt,
+}
+
 Any_Expr :: union {
     Identifier_Expr,
     Literal_Expr,
@@ -17,7 +21,8 @@ Any_Expr :: union {
     Binary_Expr,
     Call_Expr,
     Index_Expr,
-    Proc_Expr,
+    Proc_Expr, // aboba :: () -> foo {}
+    Struct_Type_Expression,
 }
 
 Proc_Expr :: struct {
@@ -80,11 +85,20 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
         lhs = Identifier_Expr{name = token.text}
     case .NUMERIC, .STRING_LIT, .CHAR_LIT:
         lhs = Literal_Expr{kind = token.kind, text = token.text}
+    case .STRUCT:
+        expect_token(parser, .LBRACE)
+        fields := make([dynamic]Var_Decl_Stmt, allocator)
+        for parser.current_token.kind != .RBRACE {
+            name := expect_token(parser, .IDENT).text
+            append(&fields, parse_var_decl_stmt_with_name(parser, name, allocator))
+        }
+        expect_token(parser, .RBRACE)
+        lhs = Struct_Type_Expression {fields = fields[:]}
     case .LPAREN:
         if parser.current_token.kind == .IDENT {
             tokenizer_temp := parser.tokenizer^ // for lookahead
             if next_token(&tokenizer_temp).kind == .COLON {
-                parameters := make([dynamic]Var_Decl_Stmt)
+                parameters := make([dynamic]Var_Decl_Stmt, allocator)
 
                 for {
                     param_name := expect_token(parser, .IDENT).text
@@ -113,6 +127,9 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
                     return_type = proc_type,
                     body = proc_body
                 }
+            } else {
+                lhs = parse_expression(parser, allocator)
+                expect_token(parser, .RPAREN)
             }
         } else if parser.current_token.kind == .RPAREN {
             expect_token(parser, .RPAREN)
@@ -134,7 +151,7 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
         r_bp := prefix_binding_power(token.kind)
         rhs := new_clone(parse_expression(parser, allocator, r_bp), allocator)
         lhs = Unary_Expr {expr = rhs, op = token.kind}
-    case .RIGHT_ARROW, .NONE, .ERROR, .EOF, .IF, .NIL, .ELSE, .FOR, .STRUCT, .ENUM, .UNION, .RETURN, .RPAREN,
+    case .RIGHT_ARROW, .NONE, .ERROR, .EOF, .IF, .NIL, .ELSE, .FOR, .ENUM, .UNION, .RETURN, .RPAREN,
          .ASSIGNMENT, .MULTIPLY, .DIVIDE, .MODULO, .PLUS_EQUAL, .MINUS_EQUAL, .MULTIPLY_EQUAL, .DIVIDE_EQUAL,
          .LOGICAL_NEGATION, .LOGICAL_EQUAL, .LOGICAL_NOT_EQUAL, .LOGICAL_AND, .LOGICAL_OR, .LESS, .LESS_EQUAL,
          .GREATER, .GREATER_EQUAL, .AMPERSAND, .BIT_OR, .BIT_XOR, .BIT_NOT, .LEFT_SHIFT, .RIGHT_SHIFT, .BIT_AND_EQUAL,
