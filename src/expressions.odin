@@ -227,8 +227,8 @@ infix_binding_power :: proc(op: Token_Kind) -> (l_bp: i8, r_bp: i8) {
 }
 
 prefix_binding_power :: proc(op: Token_Kind) -> i8 {
-    #partial switch op {
-    case .PLUS, .MINUS: return 13
-    case: unreachable()
-    }
+	#partial switch op {
+	case .PLUS, .MINUS: return 13
+	case: fmt.panicf("Awaited for `+` or `-`, got %v", op)
+	}
 }
