@@ -139,14 +139,19 @@ builder_append_expr_to_c :: proc(builder: ^strings.Builder, any_expr: Any_Expr, 
             sbprint(builder, ")")
         }
     case Unary_Expr:
-        bp := prefix_binding_power(concrete_expr.op)
-        sbprint(builder, token_kind_to_string(concrete_expr.op))
+		inner_expr := concrete_expr.expr^
+		    need_parens: bool = ---
+		#partial switch v in inner_expr {
+		         case Unary_Expr, Binary_Expr: need_parens = true
+		         case: need_parens = false
+		}
+		sbprint(builder, token_kind_to_string(concrete_expr.op))
 
-        sbprint(builder, "(")
+        if need_parens do sbprint(builder, "(")
 
-        builder_append_expr_to_c(builder, concrete_expr.expr^, bp)
+        builder_append_expr_to_c(builder, inner_expr)
 
-        sbprint(builder, ")")
+        if need_parens do sbprint(builder, ")")
     case Index_Expr:
         builder_append_expr_to_c(builder, concrete_expr.expr^)
         sbprint(builder, "[")
