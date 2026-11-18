@@ -48,7 +48,7 @@ Expr_Stmt :: struct {
 
 parse_block_stmt :: proc(p: ^Parser, allocator: r.Allocator) -> Block_Stmt {
     expect_token(p, .LBRACE)
-    if p.current_token.kind == .RBRACE { 
+    if p.current_token.kind == .RBRACE {
         expect_token(p, .RBRACE)
         return {}
     }
@@ -117,7 +117,7 @@ parse_statement :: proc(p: ^Parser, allocator: r.Allocator) -> Any_Stmt {
     case .COLON:
         ident := foo.(Identifier_Expr) or_else fmt.panicf("Expected identifier, got %v\n", foo)
         return parse_var_decl_stmt_with_name(p, ident.name, allocator)
-    case: 
+    case:
         expect_token(p, .SEMICOLON)
         return Expr_Stmt {expr = foo}
     }
@@ -129,7 +129,7 @@ parse_var_decl_stmt_with_name :: proc(p: ^Parser, name: string, allocator: r.All
 
     if p.current_token.kind == .IDENT {
         decl.type_name = expect_token(p, .IDENT).text
-    }
+    } 
 
     #partial switch p.current_token.kind {
     case .SEMICOLON:
@@ -148,7 +148,7 @@ parse_var_decl_stmt_with_name :: proc(p: ^Parser, name: string, allocator: r.All
     decl.init_expr = init_expr
 
     #partial switch _ in init_expr {
-    case Proc_Expr, Struct_Type_Expression:
+    case Proc_Expr, Struct_Type_Expr:
     case: expect_token(p, .SEMICOLON)
     }
     return decl

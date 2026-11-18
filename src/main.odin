@@ -28,15 +28,32 @@ main :: proc() {
 
     parser := make_parser(&tokenizer)
     builder := strings.builder_make(ast_allocator)
+
+    global_symbol_table := make(map[string]Var_Decl_Stmt)
+    global_decls := make([dynamic]Var_Decl_Stmt)
     for {
         stmt := parse_statement(&parser, ast_allocator)
 
         _, is_empty_stmt := stmt.(Empty_Stmt)
         if is_empty_stmt do break
-        builder_append_stmt_to_c(&builder, stmt, 0)
-        fmt.println(strings.to_string(builder))
-        strings.builder_reset(&builder)
+
+        var_decl_stmt := stmt.(Var_Decl_Stmt)
+        if var_decl_stmt.name in global_symbol_table {
+            fmt.panicf("Symbol `%v` is already defined.", var_decl_stmt.name)
+        }
+        global_symbol_table[var_decl_stmt.name] = var_decl_stmt
+        append(&global_decls, var_decl_stmt)
     }
+
+    global_scope := Scope_Context {
+        global_table = global_symbol_table,
+        current_table = make(map[string]Var_Decl_Stmt)
+    }
+    for decl in global_decls {
+        proc_expr := decl.init_expr.(Any_Expr).(Proc_Expr)
+        analyze_procedure(proc_expr, global_scope)
+    }
+
 }
 
 import "core:mem"

@@ -1,4 +1,8 @@
-main :: () -> int {
-     a: int = -(-(-1 + 1) + 1);
+add :: (a: int, b: int) -> int {
+    return a + b;
 }
 
+main :: () -> int {
+    a := 10;
+    b := a;
+}

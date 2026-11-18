@@ -31,7 +31,7 @@ builder_append_stmt_to_c :: proc(builder: ^strings.Builder, any_stmt: Any_Stmt, 
             sbprint(builder, "return;")
         }
     case If_Stmt:
-        sbprint(builder, "if(")
+        sbprint(builder, "if (")
         builder_append_expr_to_c(builder, concrete_stmt.cond_expr)
         sbprint(builder, ") ")
         builder_append_block_stmt_to_c(builder, concrete_stmt.blk_stmt, indent_level + 1)
@@ -41,7 +41,7 @@ builder_append_stmt_to_c :: proc(builder: ^strings.Builder, any_stmt: Any_Stmt, 
             builder_append_stmt_to_c(builder, else_stmt^, indent_level)
         }
     case Block_Stmt:
-        builder_append_block_stmt_to_c(builder, concrete_stmt, indent_level)
+        builder_append_block_stmt_to_c(builder, concrete_stmt, indent_level + 1)
     case Var_Decl_Stmt:
         init_expr, init_expr_is_present := concrete_stmt.init_expr.(Any_Expr)
         if init_expr_is_present {
@@ -53,7 +53,7 @@ builder_append_stmt_to_c :: proc(builder: ^strings.Builder, any_stmt: Any_Stmt, 
                     concrete_expr.return_type.(string) or_else "void",
                     concrete_stmt.name)
                 builder_append_proc_expr_to_c(builder, concrete_expr, indent_level + 1)
-            case Struct_Type_Expression:
+            case Struct_Type_Expr:
                 fmt.sbprint(builder, "typedef struct {\n")
                 for field in concrete_expr.fields {
                     if _, has_init_expr := field.init_expr.(Any_Expr); has_init_expr {
@@ -109,7 +109,9 @@ builder_append_proc_expr_to_c :: proc(builder: ^strings.Builder, proc_expr: Proc
 builder_append_expr_to_c :: proc(builder: ^strings.Builder, any_expr: Any_Expr, parent_bp: i8 = 0) {
     using fmt
     switch concrete_expr in any_expr {
-    case Struct_Type_Expression:
+    case Struct_Instance_Expr:
+        fmt.panicf("Not implemented for `%T`", concrete_expr)
+    case Struct_Type_Expr:
         fmt.sbprint(builder, "struct {")
         for field in concrete_expr.fields {
             fmt.sbprintf(builder, "%s %s;\n", field.type_name.(string), field.name)
@@ -166,7 +168,7 @@ builder_append_expr_to_c :: proc(builder: ^strings.Builder, any_expr: Any_Expr, 
             sbprint(builder, "(")
             for &any_expr in concrete_expr.args[:len(concrete_expr.args)-1] {
                 builder_append_expr_to_c(builder, any_expr)
-                sbprint(builder, ",")
+                sbprint(builder, ", ")
             }
             builder_append_expr_to_c(builder, concrete_expr.args[len(concrete_expr.args) - 1])
             sbprint(builder, ")")

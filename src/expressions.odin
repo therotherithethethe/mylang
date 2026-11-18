@@ -10,19 +10,25 @@ Parser :: struct {
     current_token: Token,
 }
 
-Struct_Type_Expression :: struct {
+Struct_Type_Expr :: struct {
     fields: []Var_Decl_Stmt,
+}
+
+Struct_Instance_Expr :: struct {
+    type_name: Maybe(string),
+    init_fields: []Assign_Stmt,
 }
 
 Any_Expr :: union {
     Identifier_Expr,
-    Literal_Expr,
-    Unary_Expr,
-    Binary_Expr,
-    Call_Expr,
-    Index_Expr,
-    Proc_Expr, // aboba :: () -> foo {}
-    Struct_Type_Expression,
+    Literal_Expr, // 10
+    Unary_Expr, // -a
+    Binary_Expr, // a + b
+    Call_Expr, // a()
+    Index_Expr, // a[10]
+    Proc_Expr, // () -> type {}
+    Struct_Type_Expr, // struct {a: int}
+    Struct_Instance_Expr, // Struct_Example.{field = 10}
 }
 
 Proc_Expr :: struct {
@@ -82,7 +88,31 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
     lhs : Any_Expr = ---
     switch token.kind {
     case .IDENT:
-        lhs = Identifier_Expr{name = token.text}
+        if parser.current_token.kind == .DOT {
+            expect_token(parser, .DOT)
+            expect_token(parser, .LBRACE)
+            if parser.current_token.kind == .RBRACE {
+                expect_token(parser, .RBRACE)
+                lhs = Struct_Instance_Expr {type_name = token.text}
+            } else {
+                init_fields := make([dynamic]Assign_Stmt, allocator)
+                for {
+                    ident_token := expect_token(parser, .IDENT)
+                    expect_token(parser, .ASSIGNMENT)
+                    expr := parse_expression(parser, allocator, 0)
+                    append(&init_fields, {name = ident_token.text, value = expr})
+                    if parser.current_token.kind == .COMMA {
+                        expect_token(parser, .COMMA)
+                    } else if parser.current_token.kind == .RBRACE {
+                        expect_token(parser, .RBRACE)
+                        break
+                    } else do fmt.panicf("Expected `}` or `,`. Got `%v`", parser.current_token.text)
+                }
+                lhs = Struct_Instance_Expr {type_name = token.text, init_fields = init_fields[:]}
+            }
+        } else {
+            lhs = Identifier_Expr{name = token.text}
+        }
     case .NUMERIC, .STRING_LIT, .CHAR_LIT:
         lhs = Literal_Expr{kind = token.kind, text = token.text}
     case .STRUCT:
@@ -93,7 +123,7 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
             append(&fields, parse_var_decl_stmt_with_name(parser, name, allocator))
         }
         expect_token(parser, .RBRACE)
-        lhs = Struct_Type_Expression {fields = fields[:]}
+        lhs = Struct_Type_Expr {fields = fields[:]}
     case .LPAREN:
         if parser.current_token.kind == .IDENT {
             tokenizer_temp := parser.tokenizer^ // for lookahead
@@ -227,8 +257,8 @@ infix_binding_power :: proc(op: Token_Kind) -> (l_bp: i8, r_bp: i8) {
 }
 
 prefix_binding_power :: proc(op: Token_Kind) -> i8 {
-	#partial switch op {
-	case .PLUS, .MINUS: return 13
-	case: fmt.panicf("Awaited for `+` or `-`, got %v", op)
-	}
+    #partial switch op {
+    case .PLUS, .MINUS: return 13
+    case: fmt.panicf("Awaited for `+` or `-`, got %v", op)
+    }
 }
