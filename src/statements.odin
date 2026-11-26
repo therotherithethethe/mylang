@@ -24,7 +24,7 @@ Assign_Stmt :: struct {
 Var_Decl_Stmt :: struct {
 	name:      string,
     is_constant: bool,
-	type_name: Maybe(string),
+	type_name: Maybe(Any_Type),
 	init_expr: Maybe(Any_Expr),
 }
 
@@ -47,29 +47,29 @@ Expr_Stmt :: struct {
 }
 
 parse_block_stmt :: proc(p: ^Parser, allocator: r.Allocator) -> Block_Stmt {
-    expect_token(p, .LBRACE)
-    if p.current_token.kind == .RBRACE {
-        expect_token(p, .RBRACE)
+    expect_token(p, .Open_Brace)
+    if p.current_token.kind == .Close_Brace {
+        expect_token(p, .Close_Brace)
         return {}
     }
 
     stmts := make([dynamic]Any_Stmt, allocator)
     for {
-        if p.current_token.kind == .EOF || p.current_token.kind == .RBRACE do break
+        if p.current_token.kind == .EOF || p.current_token.kind == .Close_Brace do break
         append(&stmts, parse_statement(p, allocator))
     }
-    expect_token(p, .RBRACE)
+    expect_token(p, .Close_Brace)
     return {stmts}
 }
 
 parse_if_stmt :: proc(p: ^Parser, allocator: r.Allocator) -> If_Stmt {
-    expect_token(p, .IF)
+    expect_token(p, .If)
     expr := parse_expression(p, allocator)
     then_blk := parse_block_stmt(p, allocator)
     else_blk: ^Any_Stmt
-    if p.current_token.kind == .ELSE {
-        expect_token(p, .ELSE)
-        if p.current_token.kind == .IF {
+    if p.current_token.kind == .Else {
+        expect_token(p, .Else)
+        if p.current_token.kind == .If {
             else_blk = new_clone(Any_Stmt(parse_if_stmt(p, allocator)), allocator)
         } else {
             else_blk = new_clone(Any_Stmt(parse_block_stmt(p, allocator)), allocator)
@@ -85,19 +85,19 @@ parse_if_stmt :: proc(p: ^Parser, allocator: r.Allocator) -> If_Stmt {
 parse_statement :: proc(p: ^Parser, allocator: r.Allocator) -> Any_Stmt {
 	if p.current_token.kind == .EOF do return Empty_Stmt{}
 
-    if p.current_token.kind == .LBRACE {
+    if p.current_token.kind == .Open_Brace {
         return parse_block_stmt(p, allocator)
     }
-    if p.current_token.kind == .IF {
+    if p.current_token.kind == .If {
         return parse_if_stmt(p, allocator)
     }
-    if p.current_token.kind == .RETURN {
-        expect_token(p, .RETURN)
+    if p.current_token.kind == .Return {
+        expect_token(p, .Return)
         return_expr: Maybe(Any_Expr)
-        if p.current_token.kind != .SEMICOLON {
+        if p.current_token.kind != .Semicolon {
             return_expr = parse_expression(p, allocator)
         }
-        expect_token(p, .SEMICOLON)
+        expect_token(p, .Semicolon)
         return Return_Stmt {
             expr = return_expr
         }
@@ -105,41 +105,42 @@ parse_statement :: proc(p: ^Parser, allocator: r.Allocator) -> Any_Stmt {
     foo := parse_expression(p, allocator)
 
     #partial switch p.current_token.kind {
-    case .ASSIGNMENT:
+    case .Assign:
         ident := foo.(Identifier_Expr) or_else fmt.panicf("Expected identifier, got %v\n", foo)
-        expect_token(p, .ASSIGNMENT)
+        expect_token(p, .Assign)
         expr := parse_expression(p, allocator)
-        expect_token(p, .SEMICOLON)
+        expect_token(p, .Semicolon)
         return Assign_Stmt {
             name = ident.name,
             value = expr
         }
-    case .COLON:
+    case .Colon:
         ident := foo.(Identifier_Expr) or_else fmt.panicf("Expected identifier, got %v\n", foo)
         return parse_var_decl_stmt_with_name(p, ident.name, allocator)
     case:
-        expect_token(p, .SEMICOLON)
+        expect_token(p, .Semicolon)
         return Expr_Stmt {expr = foo}
     }
 }
 
 parse_var_decl_stmt_with_name :: proc(p: ^Parser, name: string, allocator: r.Allocator) -> Var_Decl_Stmt {
     decl := Var_Decl_Stmt {name = name}
-    expect_token(p, .COLON)
+    expect_token(p, .Colon)
 
-    if p.current_token.kind == .IDENT {
-        decl.type_name = expect_token(p, .IDENT).text
+    if p.current_token.kind == .Ident {
+        // decl.type_name = expect_token(p, .Ident).text
+        decl.type_name = parse_type(p, allocator)
     } 
 
     #partial switch p.current_token.kind {
-    case .SEMICOLON:
+    case .Semicolon:
         if _, has_type := decl.type_name.(string); !has_type {
             fmt.panicf("Declaration `%s` requires a type or initializer.", name)
         }
-        expect_token(p, .SEMICOLON)
+        expect_token(p, .Semicolon)
         return decl
-    case .ASSIGNMENT, .COLON:
-        decl.is_constant = consume_token(p).kind == .COLON
+    case .Assign, .Colon:
+        decl.is_constant = consume_token(p).kind == .Colon
     case:
         fmt.panicf("Expected '=', ':' or ';' after declaration `%s`, got %v.", name, p.current_token.kind)
     }
@@ -149,7 +150,7 @@ parse_var_decl_stmt_with_name :: proc(p: ^Parser, name: string, allocator: r.All
 
     #partial switch _ in init_expr {
     case Proc_Expr, Struct_Type_Expr:
-    case: expect_token(p, .SEMICOLON)
+    case: expect_token(p, .Semicolon)
     }
     return decl
 }

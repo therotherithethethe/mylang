@@ -26,6 +26,7 @@ Any_Expr :: union {
     Binary_Expr, // a + b
     Call_Expr, // a()
     Index_Expr, // a[10]
+    Array_Expr,
     Proc_Expr, // () -> type {}
     Struct_Type_Expr, // struct {a: int}
     Struct_Instance_Expr, // Struct_Example.{field = 10}
@@ -62,6 +63,11 @@ Index_Expr :: struct {
     index: ^Any_Expr,
 }
 
+Array_Expr :: struct {
+    element_type: Maybe(Named_Type),
+    elements: []Any_Expr,
+}
+
 Call_Expr :: struct {
     callee: ^Any_Expr,
     args: [dynamic]Any_Expr,
@@ -87,24 +93,28 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
 
     lhs : Any_Expr = ---
     switch token.kind {
-    case .IDENT:
-        if parser.current_token.kind == .DOT {
-            expect_token(parser, .DOT)
-            expect_token(parser, .LBRACE)
-            if parser.current_token.kind == .RBRACE {
-                expect_token(parser, .RBRACE)
+    case .Ident:
+        if parser.current_token.kind == .Period {
+            expect_token(parser, .Period)
+            if parser.current_token.kind == .Open_Bracket {
+                lhs = parse_array_expr(parser, allocator, Named_Type{name = token.text})
+                break
+            }
+            expect_token(parser, .Open_Brace)
+            if parser.current_token.kind == .Close_Brace {
+                expect_token(parser, .Close_Brace)
                 lhs = Struct_Instance_Expr {type_name = token.text}
             } else {
                 init_fields := make([dynamic]Assign_Stmt, allocator)
                 for {
-                    ident_token := expect_token(parser, .IDENT)
-                    expect_token(parser, .ASSIGNMENT)
+                    ident_token := expect_token(parser, .Ident)
+                    expect_token(parser, .Assign)
                     expr := parse_expression(parser, allocator, 0)
                     append(&init_fields, {name = ident_token.text, value = expr})
-                    if parser.current_token.kind == .COMMA {
-                        expect_token(parser, .COMMA)
-                    } else if parser.current_token.kind == .RBRACE {
-                        expect_token(parser, .RBRACE)
+                    if parser.current_token.kind == .Comma {
+                        expect_token(parser, .Comma)
+                    } else if parser.current_token.kind == .Close_Brace {
+                        expect_token(parser, .Close_Brace)
                         break
                     } else do fmt.panicf("Expected `}` or `,`. Got `%v`", parser.current_token.text)
                 }
@@ -113,43 +123,45 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
         } else {
             lhs = Identifier_Expr{name = token.text}
         }
-    case .NUMERIC, .STRING_LIT, .CHAR_LIT:
+    case .Integer, .String_Literal, .Char_Literal:
         lhs = Literal_Expr{kind = token.kind, text = token.text}
-    case .STRUCT:
-        expect_token(parser, .LBRACE)
+    case .Period:
+        lhs = parse_array_expr(parser, allocator, nil)
+    case .Struct:
+        expect_token(parser, .Open_Brace)
         fields := make([dynamic]Var_Decl_Stmt, allocator)
-        for parser.current_token.kind != .RBRACE {
-            name := expect_token(parser, .IDENT).text
+        for parser.current_token.kind != .Close_Brace {
+            name := expect_token(parser, .Ident).text
             append(&fields, parse_var_decl_stmt_with_name(parser, name, allocator))
         }
-        expect_token(parser, .RBRACE)
+        expect_token(parser, .Close_Brace)
         lhs = Struct_Type_Expr {fields = fields[:]}
-    case .LPAREN:
-        if parser.current_token.kind == .IDENT {
+    case .Open_Paren:
+        if parser.current_token.kind == .Ident {
             tokenizer_temp := parser.tokenizer^ // for lookahead
-            if next_token(&tokenizer_temp).kind == .COLON {
+            if next_token(&tokenizer_temp).kind == .Colon {
                 parameters := make([dynamic]Var_Decl_Stmt, allocator)
 
                 for {
-                    param_name := expect_token(parser, .IDENT).text
-                    expect_token(parser, .COLON)
-                    type := expect_token(parser, .IDENT).text
+                    param_name := expect_token(parser, .Ident).text
+                    expect_token(parser, .Colon)
+                    type := expect_token(parser, .Ident).text
                     append(&parameters, {
                         name = param_name, 
                         type_name = type, 
                         init_expr = nil
                         })
-                    if parser.current_token.kind == .RPAREN {
-                        expect_token(parser, .RPAREN)
+                    if parser.current_token.kind == .Close_Paren {
+                        expect_token(parser, .Close_Paren)
                         break
                     }
-                    expect_token(parser, .COMMA)
+                    expect_token(parser, .Comma)
                 }
 
                 proc_type: Maybe(string)
-                if parser.current_token.kind == .RIGHT_ARROW {
-                    expect_token(parser, .RIGHT_ARROW)
-                    proc_type = expect_token(parser, .IDENT).text
+                if parser.current_token.kind == .Right_Arrow {
+                    expect_token(parser, .Right_Arrow)
+                    proc_type = expect_token(parser, .Ident).text
                 }
                 proc_body := parse_block_stmt(parser, allocator)
                 lhs = Proc_Expr {
@@ -159,14 +171,14 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
                 }
             } else {
                 lhs = parse_expression(parser, allocator)
-                expect_token(parser, .RPAREN)
+                expect_token(parser, .Close_Paren)
             }
-        } else if parser.current_token.kind == .RPAREN {
-            expect_token(parser, .RPAREN)
+        } else if parser.current_token.kind == .Close_Paren {
+            expect_token(parser, .Close_Paren)
             proc_type: Maybe(string)
-            if parser.current_token.kind == .RIGHT_ARROW {
-                expect_token(parser, .RIGHT_ARROW)
-                proc_type = expect_token(parser, .IDENT).text
+            if parser.current_token.kind == .Right_Arrow {
+                expect_token(parser, .Right_Arrow)
+                proc_type = expect_token(parser, .Ident).text
             }
             proc_body := parse_block_stmt(parser, allocator)
             lhs = Proc_Expr {
@@ -175,19 +187,19 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
             }
         } else {
             lhs = parse_expression(parser, allocator)
-            expect_token(parser, .RPAREN)
+            expect_token(parser, .Close_Paren)
         }
-    case .PLUS, .MINUS:
+    case .Plus, .Minus:
         r_bp := prefix_binding_power(token.kind)
         rhs := new_clone(parse_expression(parser, allocator, r_bp), allocator)
         lhs = Unary_Expr {expr = rhs, op = token.kind}
-    case .RIGHT_ARROW, .NONE, .ERROR, .EOF, .IF, .NIL, .ELSE, .FOR, .ENUM, .UNION, .RETURN, .RPAREN,
-         .ASSIGNMENT, .MULTIPLY, .DIVIDE, .MODULO, .PLUS_EQUAL, .MINUS_EQUAL, .MULTIPLY_EQUAL, .DIVIDE_EQUAL,
-         .LOGICAL_NEGATION, .LOGICAL_EQUAL, .LOGICAL_NOT_EQUAL, .LOGICAL_AND, .LOGICAL_OR, .LESS, .LESS_EQUAL,
-         .GREATER, .GREATER_EQUAL, .AMPERSAND, .BIT_OR, .BIT_XOR, .BIT_NOT, .LEFT_SHIFT, .RIGHT_SHIFT, .BIT_AND_EQUAL,
-         .BIT_OR_EQUAL, .BIT_XOR_EQUAL, .LEFT_SHIFT_EQUAL, .RIGHT_SHIFT_EQUAL, .LBRACE, .RBRACE, .LBRACKET, .RBRACKET,
-         .DOT, .RANGE, .COLON, .COMMA, .SEMICOLON,
-         .COMPILER_DIRECTIVE: fmt.panicf("Expected expression, got %v", token, loc = loc)
+    case .Right_Arrow, .None, .Error, .EOF, .If, .Nil, .Else, .For, .Enum, .Union, .Return, .Close_Paren,
+         .Assign, .Asterisk, .Divide, .Modulo, .Plus_Assign, .Minus_Assign, .Multiply_Assign, .Divide_Assign,
+         .Logical_Not, .Equal, .Not_Equal, .Logical_And, .Logical_Or, .Less, .Less_Equal,
+         .Greater, .Greater_Equal, .Ampersand, .Bit_Or, .Bit_Xor, .Bit_Not, .Left_Shift, .Right_Shift, .Bit_And_Assign,
+         .Bit_Or_Assign, .Bit_Xor_Assign, .Left_Shift_Assign, .Right_Shift_Assign, .Open_Brace, .Close_Brace, .Open_Bracket, .Close_Bracket,
+         .Double_Dot, .Colon, .Comma, .Semicolon,
+         .Compiler_Directive: fmt.panicf("Expected expression, got %v", token, loc = loc)
     }
 
     for {
@@ -197,28 +209,28 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
         }
         
         // foo[1+2]
-        if op.kind == .LBRACKET {
+        if op.kind == .Open_Bracket {
             consume_token(parser)
             index_expression := parse_expression(parser, allocator, 0)
-            assert(consume_token(parser).kind == .RBRACKET)
+            assert(consume_token(parser).kind == .Close_Bracket)
             lhs = Index_Expr {expr = new_clone(lhs, allocator), index = new_clone(index_expression, allocator)}
             continue
         }
         // foo(1 + 2)
-        if op.kind == .LPAREN {
+        if op.kind == .Open_Paren {
             consume_token(parser)
             args: [dynamic]Any_Expr
-            if parser.current_token.kind == .RPAREN {
-                expect_token(parser, .RPAREN)
+            if parser.current_token.kind == .Close_Paren {
+                expect_token(parser, .Close_Paren)
             } else {
                 args = make([dynamic]Any_Expr, allocator)
                 for {
                     append(&args, parse_expression(parser, allocator, 0))
-                    if parser.current_token.kind == .RPAREN {
-                        expect_token(parser, .RPAREN)
+                    if parser.current_token.kind == .Close_Paren {
+                        expect_token(parser, .Close_Paren)
                         break
                     } else {
-                        expect_token(parser, .COMMA)
+                        expect_token(parser, .Comma)
                     }
                 }
             }
@@ -244,21 +256,33 @@ parse_expression :: proc(using parser: ^Parser, allocator: runtime.Allocator, mi
     return lhs
 }
 
+parse_array_expr :: proc(p: ^Parser, allocator: runtime.Allocator, element_type: Maybe(Named_Type)) -> Array_Expr {
+    expect_token(p, .Open_Bracket)
+    elements := make([dynamic]Any_Expr, allocator)
+    for p.current_token.kind != .Close_Bracket {
+        append(&elements, parse_expression(p, allocator))
+        if p.current_token.kind == .Close_Bracket do break
+        expect_token(p, .Comma)
+    }
+    expect_token(p, .Close_Bracket)
+    return Array_Expr{element_type = element_type, elements = elements[:]}
+}
+
 infix_binding_power :: proc(op: Token_Kind) -> (l_bp: i8, r_bp: i8) {
     #partial switch op {
-    case .LOGICAL_OR: return 1, 2
-    case .BIT_XOR: return 3, 4
-    case .AMPERSAND: return 5, 6
-    case .RIGHT_SHIFT, .LEFT_SHIFT: return 7, 8
-    case .PLUS, .MINUS: return 9, 10
-    case .MULTIPLY, .DIVIDE, .MODULO: return 11, 12
+    case .Logical_Or: return 1, 2
+    case .Bit_Xor: return 3, 4
+    case .Bit_And: return 5, 6
+    case .Right_Shift, .Left_Shift: return 7, 8
+    case .Plus, .Minus: return 9, 10
+    case .Multiply, .Divide, .Modulo: return 11, 12
     case: return -1, -1
     }
 }
 
 prefix_binding_power :: proc(op: Token_Kind) -> i8 {
     #partial switch op {
-    case .PLUS, .MINUS: return 13
+    case .Plus, .Minus: return 13
     case: fmt.panicf("Awaited for `+` or `-`, got %v", op)
     }
 }

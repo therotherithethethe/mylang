@@ -109,7 +109,7 @@ builder_append_proc_expr_to_c :: proc(builder: ^strings.Builder, proc_expr: Proc
 builder_append_expr_to_c :: proc(builder: ^strings.Builder, any_expr: Any_Expr, parent_bp: i8 = 0) {
     using fmt
     switch concrete_expr in any_expr {
-    case Struct_Instance_Expr:
+    case Struct_Instance_Expr, Array_Expr:
         fmt.panicf("Not implemented for `%T`", concrete_expr)
     case Struct_Type_Expr:
         fmt.sbprint(builder, "struct {")
@@ -120,9 +120,9 @@ builder_append_expr_to_c :: proc(builder: ^strings.Builder, any_expr: Any_Expr, 
     case Identifier_Expr: 
         fmt.sbprint(builder, concrete_expr.name)
     case Literal_Expr: 
-        if concrete_expr.kind == .STRING_LIT {
+        if concrete_expr.kind == .String_Literal {
             fmt.sbprintf(builder, "\"%s\"", concrete_expr.text)
-        } else if concrete_expr.kind == .CHAR_LIT {
+        } else if concrete_expr.kind == .Char_Literal {
             fmt.sbprintf(builder, "\'%s\'", concrete_expr.text)
         } else {
             fmt.sbprint(builder, concrete_expr.text)

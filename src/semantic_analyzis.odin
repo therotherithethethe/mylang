@@ -78,7 +78,7 @@ analyze_block_stmt :: proc(block_stmt: Block_Stmt, scope: Scope_Context) {
     }
 }
 
-check_expression :: proc(scope: Scope_Context, any_expr: Any_Expr) -> string {
+check_expression :: proc(scope: Scope_Context, any_expr: Any_Expr) -> Any_Type {
     switch expr in any_expr {
     case Identifier_Expr:
         if declaration, exist := scope_get_symbol(scope, expr.name); !exist {
@@ -87,29 +87,28 @@ check_expression :: proc(scope: Scope_Context, any_expr: Any_Expr) -> string {
             return declaration.type_name.(string)
         }
     case Literal_Expr:
-        #partial switch expr.kind {
-        case .NUMERIC:    return "int"
-        case .STRING_LIT: return "string"
-        case .CHAR_LIT:   return "char"
-        }
+        return token_kind_to_type(expr.kind)
     case Binary_Expr:
-        if check_expression(scope, expr.left^) != "int" || check_expression(scope, expr.right^) != "int" {
-            fmt.panicf("Only `int` can be assisted in binary expressions. Operator overloading WiP, TBD.")
-        } else {
-            return "int"
+        left_type,  ok1 := check_expression(scope, expr.left^).(Named_Type)
+        right_type, ok2 := check_expression(scope, expr.right^).(Named_Type)
+        if !ok1 || !ok2 || left_type.name != "int" || right_type.name != "int" {
+            fmt.panicf("Expr cannot be binary expression.")
         }
+        return Named_Type {name = "int"}
     case Unary_Expr:
-        if check_expression(scope, expr.expr^) != "int" {
-            fmt.panicf("Unary expression supports only `int`.")
-        } else {
-            return "int"
+        expr_type, ok1 := check_expression(scope, expr.expr^).(Named_Type)
+        if !ok1 || expr_type.name != "int" {
+            fmt.panicf("Expr cannot be unary expression.")
         }
-    case Index_Expr:
-        if check_expression(scope, expr.index^) != "int" {
-            fmt.panicf("Index must be integer")
-        } else {
-            return check_expression(scope, expr.expr^)
+        return Named_Type {name = "int"}
+    case Index_Expr: // mama[lol]
+        expr_type, ok := check_expression(scope, expr.index^).(Named_Type)
+        if !ok || expr_type.name != "int" {
+            fmt.panicf("Index could be only an integer.")
         }
+        check_expression(scope, expr.expr^).(Array_Type) or_else fmt.panicf("Variable has to be indexable.")
+    case Array_Expr:
+        unimplemented("Checking array literals")
     case Call_Expr: // asd()
 
     // case Proc_Expr:

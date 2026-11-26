@@ -6,82 +6,80 @@ import "core:fmt"
 import "core:strings"
 
 Token_Kind :: enum {
-    NONE, ERROR, EOF,
-    IF, NIL, ELSE, FOR, STRUCT, ENUM, UNION, IDENT, RETURN,
-    LPAREN, RPAREN,
-    ASSIGNMENT, PLUS, MINUS, MULTIPLY, DIVIDE, MODULO, PLUS_EQUAL, MINUS_EQUAL, MULTIPLY_EQUAL, DIVIDE_EQUAL,
-    LOGICAL_NEGATION, LOGICAL_EQUAL, LOGICAL_NOT_EQUAL, LOGICAL_AND, LOGICAL_OR, LESS, LESS_EQUAL, GREATER, GREATER_EQUAL,
-    AMPERSAND, BIT_OR, BIT_XOR, BIT_NOT, LEFT_SHIFT, RIGHT_SHIFT, BIT_AND_EQUAL, BIT_OR_EQUAL, BIT_XOR_EQUAL, LEFT_SHIFT_EQUAL, RIGHT_SHIFT_EQUAL,
+    None, Error, EOF,
+    If, Nil, Else, For, Struct, Enum, Union, Ident, Return,
+    Open_Paren, Close_Paren,
+    Assign, Plus, Minus, Asterisk, Divide, Modulo,
+    Plus_Assign, Minus_Assign, Multiply_Assign, Divide_Assign,
+    Logical_Not, Equal, Not_Equal, Logical_And, Logical_Or,
+    Less, Less_Equal, Greater, Greater_Equal,
+    Ampersand, Bit_Or, Bit_Xor, Bit_Not, Left_Shift, Right_Shift,
+    Bit_And_Assign, Bit_Or_Assign, Bit_Xor_Assign, Left_Shift_Assign, Right_Shift_Assign,
 
-    LBRACE, RBRACE,
-    LBRACKET, RBRACKET,
-    DOT,
-    RANGE,
-    COLON,
-    COMMA,
-    SEMICOLON,
-    RIGHT_ARROW,
+    Open_Brace, Close_Brace,
+    Open_Bracket, Close_Bracket,
+    Period, Double_Dot, Colon, Comma, Semicolon, Right_Arrow,
 
-    NUMERIC,
-    STRING_LIT,
-    CHAR_LIT,
-    COMPILER_DIRECTIVE
+    Integer, String_Literal, Char_Literal, Compiler_Directive,
+
+    Multiply = Asterisk,
+    Bit_And = Ampersand,
 }
 
 token_kind_to_string :: #force_inline proc(kind: Token_Kind) -> string {
     switch kind {
-    case .RIGHT_ARROW:       return "->"
-    case .ASSIGNMENT:        return "="
-    case .PLUS:              return "+"
-    case .MINUS:             return "-"
-    case .MULTIPLY:          return "*"
-    case .DIVIDE:            return "/"
-    case .MODULO:            return "%"
-    case .PLUS_EQUAL:        return "+="
-    case .MINUS_EQUAL:       return "-="
-    case .MULTIPLY_EQUAL:    return "*="
-    case .DIVIDE_EQUAL:      return "/="
-    case .LOGICAL_NEGATION:  return "!"
-    case .LOGICAL_EQUAL:     return "=="
-    case .LOGICAL_NOT_EQUAL: return "!="
-    case .LOGICAL_AND:       return "&&"
-    case .LOGICAL_OR:        return "||"
-    case .LESS:              return "<"
-    case .LESS_EQUAL:        return "<="
-    case .GREATER:           return ">"
-    case .GREATER_EQUAL:     return ">="
-    case .AMPERSAND:         return "&"
-    case .BIT_OR:            return "|"
-    case .BIT_XOR:           return "^"
-    case .BIT_NOT:           return "~"
-    case .LEFT_SHIFT:        return "<<"
-    case .RIGHT_SHIFT:       return ">>"
-    case .BIT_AND_EQUAL:     return "&="
-    case .BIT_OR_EQUAL:      return "|="
-    case .BIT_XOR_EQUAL:     return "^="
-    case .LEFT_SHIFT_EQUAL:  return "<<="
-    case .RIGHT_SHIFT_EQUAL: return ">>="
-    case .LPAREN:   return "("
-    case .RPAREN:   return ")"
-    case .LBRACE:   return "{"
-    case .RBRACE:   return "}"
-    case .LBRACKET: return "["
-    case .RBRACKET: return "]"
-    case .DOT:      return "."
-    case .RANGE:    return ".."
-    case .COLON:    return ":"
-    case .COMMA:    return ","
-    case .SEMICOLON: return ";"
-    case .IF:       return "if"
-    case .NIL:      return "nil"
-    case .ELSE:     return "else"
-    case .FOR:      return "for"
-    case .STRUCT:   return "struct"
-    case .ENUM:     return "enum"
-    case .UNION:    return "union"
-    case .RETURN:   return "return"
-    case .EOF:      return "EOF"
-    case .NONE, .ERROR, .IDENT, .NUMERIC, .STRING_LIT, .CHAR_LIT, .COMPILER_DIRECTIVE:
+    case .Right_Arrow:          return "->"
+    case .Assign:               return "="
+    case .Plus:                 return "+"
+    case .Minus:                return "-"
+    case .Asterisk:             return "*"
+    case .Divide:               return "/"
+    case .Modulo:               return "%"
+    case .Plus_Assign:          return "+="
+    case .Minus_Assign:         return "-="
+    case .Multiply_Assign:      return "*="
+    case .Divide_Assign:        return "/="
+    case .Logical_Not:          return "!"
+    case .Equal:                return "=="
+    case .Not_Equal:            return "!="
+    case .Logical_And:          return "&&"
+    case .Logical_Or:           return "||"
+    case .Less:                 return "<"
+    case .Less_Equal:           return "<="
+    case .Greater:              return ">"
+    case .Greater_Equal:        return ">="
+    case .Ampersand:            return "&"
+    case .Bit_Or:               return "|"
+    case .Bit_Xor:              return "^"
+    case .Bit_Not:              return "~"
+    case .Left_Shift:           return "<<"
+    case .Right_Shift:          return ">>"
+    case .Bit_And_Assign:       return "&="
+    case .Bit_Or_Assign:        return "|="
+    case .Bit_Xor_Assign:       return "^="
+    case .Left_Shift_Assign:    return "<<="
+    case .Right_Shift_Assign:   return ">>="
+    case .Open_Paren:           return "("
+    case .Close_Paren:          return ")"
+    case .Open_Brace:           return "{"
+    case .Close_Brace:          return "}"
+    case .Open_Bracket:         return "["
+    case .Close_Bracket:        return "]"
+    case .Period:               return "."
+    case .Double_Dot:           return ".."
+    case .Colon:                return ":"
+    case .Comma:                return ","
+    case .Semicolon:            return ";"
+    case .If:                   return "if"
+    case .Nil:                  return "nil"
+    case .Else:                 return "else"
+    case .For:                  return "for"
+    case .Struct:               return "struct"
+    case .Enum:                 return "enum"
+    case .Union:                return "union"
+    case .Return:               return "return"
+    case .EOF:                  return "EOF"
+    case .None, .Error, .Ident, .Integer, .String_Literal, .Char_Literal, .Compiler_Directive:
         fmt.panicf("token_kind_to_string: no string spelling for %v", kind)
     }
     unreachable()
@@ -95,66 +93,66 @@ Token :: struct {
 
 lookup_keyword :: #force_inline proc(s: string) -> Token_Kind {
     switch s {
-    case "if":     return .IF
-    case "nil":    return .NIL
-    case "else":   return .ELSE
-    case "for":    return .FOR
-    case "enum":   return .ENUM
-    case "union":  return .UNION
-    case "struct": return .STRUCT
-    case "return": return .RETURN
-    case: return .IDENT
+    case "if":     return .If
+    case "nil":    return .Nil
+    case "else":   return .Else
+    case "for":    return .For
+    case "enum":   return .Enum
+    case "union":  return .Union
+    case "struct": return .Struct
+    case "return": return .Return
+    case: return .Ident
     }
 }
 
 lookup_symbol :: #force_inline proc(s: string) -> Token_Kind {
     switch s {
-    case "=": return .ASSIGNMENT
-    case "+": return .PLUS
-    case "-": return .MINUS
-    case "*": return .MULTIPLY
-    case "/": return .DIVIDE
-    case "%": return .MODULO
-    case "+=": return .PLUS_EQUAL
-    case "-=": return .MINUS_EQUAL
-    case "*=": return .MULTIPLY_EQUAL
-    case "/=": return .DIVIDE_EQUAL
+    case "=": return .Assign
+    case "+": return .Plus
+    case "-": return .Minus
+    case "*": return .Asterisk
+    case "/": return .Divide
+    case "%": return .Modulo
+    case "+=": return .Plus_Assign
+    case "-=": return .Minus_Assign
+    case "*=": return .Multiply_Assign
+    case "/=": return .Divide_Assign
 
-    case "!": return .LOGICAL_NEGATION
-    case "==": return .LOGICAL_EQUAL
-    case "!=": return .LOGICAL_NOT_EQUAL
-    case "&&": return .LOGICAL_AND
-    case "||": return .LOGICAL_OR
-    case "<": return .LESS
-    case "<=": return .LESS_EQUAL
-    case ">": return .GREATER
-    case ">=": return .GREATER_EQUAL
+    case "!": return .Logical_Not
+    case "==": return .Equal
+    case "!=": return .Not_Equal
+    case "&&": return .Logical_And
+    case "||": return .Logical_Or
+    case "<": return .Less
+    case "<=": return .Less_Equal
+    case ">": return .Greater
+    case ">=": return .Greater_Equal
 
-    case "&": return .AMPERSAND
-    case "|": return .BIT_OR
-    case "^": return .BIT_XOR
-    case "~": return .BIT_NOT
-    case "<<": return .LEFT_SHIFT
-    case ">>": return .RIGHT_SHIFT
-    case "|=": return .BIT_OR_EQUAL
-    case "&=": return .BIT_AND_EQUAL
-    case "^=": return .BIT_XOR_EQUAL
-    case "<<=": return .LEFT_SHIFT_EQUAL
-    case ">>=": return .RIGHT_SHIFT_EQUAL
+    case "&": return .Ampersand
+    case "|": return .Bit_Or
+    case "^": return .Bit_Xor
+    case "~": return .Bit_Not
+    case "<<": return .Left_Shift
+    case ">>": return .Right_Shift
+    case "|=": return .Bit_Or_Assign
+    case "&=": return .Bit_And_Assign
+    case "^=": return .Bit_Xor_Assign
+    case "<<=": return .Left_Shift_Assign
+    case ">>=": return .Right_Shift_Assign
 
-    case ".": return .DOT
-    case "..": return .RANGE
-    case ":": return .COLON
-    case "(": return .LPAREN
-    case ")": return .RPAREN
-    case "[": return .LBRACKET
-    case "]": return .RBRACKET
-    case "{": return .LBRACE
-    case "}": return .RBRACE
-    case ",": return .COMMA
-    case ";": return .SEMICOLON
-    case "->": return .RIGHT_ARROW
-    case: return .ERROR
+    case ".": return .Period
+    case "..": return .Double_Dot
+    case ":": return .Colon
+    case "(": return .Open_Paren
+    case ")": return .Close_Paren
+    case "[": return .Open_Bracket
+    case "]": return .Close_Bracket
+    case "{": return .Open_Brace
+    case "}": return .Close_Brace
+    case ",": return .Comma
+    case ";": return .Semicolon
+    case "->": return .Right_Arrow
+    case: return .Error
     }
 }
 
@@ -190,6 +188,7 @@ is_digit :: proc(c: u8) -> bool {
     return c >= '0' && c <= '9'
 }
 
+// tokenizer for get_next_token procedure.
 Tokenizer :: struct {
     file_name: string,
     line: int,
@@ -253,8 +252,8 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
         }
         value := input[start:offset]
 
-        if kind := lookup_keyword(value); kind == .IDENT {
-            return Token {kind = .IDENT, text = value, line = line, col = col}
+        if kind := lookup_keyword(value); kind == .Ident {
+            return Token {kind = .Ident, text = value, line = line, col = col}
         } else {
             return Token {kind = kind, line = line, col = col, text = value}
         }
@@ -266,7 +265,7 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
         for offset < input_len && is_digit(current_char(tokenizer)) {
             advance(tokenizer)
         }
-        return Token {kind = .NUMERIC, text = input[start:offset], line = line, col = col}
+        return Token {kind = .Integer, text = input[start:offset], line = line, col = col}
     }
 
     if input[offset] == '"' {
@@ -279,7 +278,7 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
 
         if offset >= input_len do panic("Unterminated string literal.")
         advance(tokenizer)
-        return Token {kind = .STRING_LIT, text = input[start:offset - 1], line = line, col = col}
+        return Token {kind = .String_Literal, text = input[start:offset - 1], line = line, col = col}
     }
 
     if input[offset] == '\'' {
@@ -288,7 +287,7 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
         if offset >= input_len || input[offset] != '\'' do fmt.panicf("Char character must end with \'\n")
         value := input[offset-1:offset]
         advance(tokenizer)
-        return Token {kind = .CHAR_LIT, text = input[offset-2:offset-1], line = line, col = col}
+        return Token {kind = .Char_Literal, text = input[offset-2:offset-1], line = line, col = col}
     }
 
     if input[offset] == '#' {
@@ -298,7 +297,7 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
         for offset < input_len && is_ident_char(current_char(tokenizer)) {
             advance(tokenizer)
         }
-        return Token {kind = .COMPILER_DIRECTIVE, text = input[start:offset], line = line, col = col}
+        return Token {kind = .Compiler_Directive, text = input[start:offset], line = line, col = col}
     }
     
     for op_size in 0..<3 {
@@ -306,7 +305,7 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
         line, col := line, col
         if offset + size <= input_len {
             value := input[offset:offset+size]
-            if kind := lookup_symbol(value); kind != .ERROR {
+            if kind := lookup_symbol(value); kind != .Error {
                 advance(tokenizer, size)
                 return Token {kind = kind, line = line, col = col, text = value}
             }
@@ -321,10 +320,10 @@ next_token :: proc(using tokenizer: ^Tokenizer) -> Token {
         if is_whitespace(c) || is_ident_start(c) || is_digit(c) || c == '"' || c == '\'' {
             break
         }
-        if lookup_symbol(input[offset:offset+1]) != .ERROR {
+        if lookup_symbol(input[offset:offset+1]) != .Error {
             break
         }
         advance(tokenizer)
     }
-    return Token { kind = .ERROR, text = input[start:offset], line = err_line, col = err_col}
+    return Token { kind = .Error, text = input[start:offset], line = err_line, col = err_col}
 }

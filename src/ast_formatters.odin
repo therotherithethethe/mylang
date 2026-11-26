@@ -56,6 +56,11 @@ format_ast_tree :: proc(expr: Any_Expr, allocator: runtime.Allocator) -> string 
             sbprint(builder, "Index_Expr\n")
             print_node(v.expr^, builder, child_prefix, false, false)
             print_node(v.index^, builder, child_prefix, true, false)
+        case Array_Expr:
+            sbprintf(builder, "Array_Expr[%d]\n", len(v.elements))
+            for element, i in v.elements {
+                print_node(element, builder, child_prefix, i == len(v.elements) - 1, false)
+            }
         case Call_Expr:
             sbprint(builder, "Call_Expr\n")
             if len(v.args) > 0 {
@@ -104,6 +109,13 @@ format_ast_sexpr :: proc(expr: Any_Expr, allocator := context.allocator) -> stri
             impl(v.expr^, builder)
             sbprintf(builder, " ")
             impl(v.index^, builder)
+            sbprint(builder, ")")
+        case Array_Expr:
+            sbprintf(builder, "(_array %d", len(v.elements))
+            for element in v.elements {
+                sbprint(builder, " ")
+                impl(element, builder)
+            }
             sbprint(builder, ")")
         case Call_Expr:
             sbprint(builder, "(_call ")
